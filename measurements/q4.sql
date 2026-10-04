@@ -1,0 +1,1 @@
+SELECT database,name FROM system.tables WHERE database NOT IN ('system','INFORMATION_SCHEMA','information_schema') LIMIT 40 FORMAT TSV

@@ -1,0 +1,561 @@
+[
+  {
+    "id": 1378081384,
+    "full_name": "RubinLabs26/ISpotify",
+    "description": "Local-first desktop music search, playlist, download, and playback app for Windows and Linux",
+    "language": "Python",
+    "topics": [
+      "linux",
+      "music-player",
+      "pyside6",
+      "python",
+      "windows",
+      "yt-dlp"
+    ],
+    "url": "https://github.com/RubinLabs26/ISpotify",
+    "stars": 1902,
+    "forks": 1,
+    "open_issues": 3,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 12,
+    "slope": 475.0,
+    "curvature": null,
+    "score": 0.5816410429080741,
+    "spam": false,
+    "weeks": [
+      1900,
+      2
+    ],
+    "why": [
+      "日均新增 star 475",
+      "数据不足 14 天，无曲率",
+      "3 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1397016507,
+    "full_name": "rehan-remade/universal-modder",
+    "description": "Point Claude at any game. Skills, tools and the fal MCP that let Claude Code mod almost any PC game you own: recon, reverse engineering, fal-generated art/3D/audio, in-game testing, showcase videos.",
+    "language": "Python",
+    "topics": [
+      "age-of-empires",
+      "claude-code",
+      "claude-code-plugin",
+      "fal",
+      "game-assets",
+      "game-modding",
+      "mcp",
+      "modding",
+      "reverse-engineering",
+      "tmodloader"
+    ],
+    "url": "https://github.com/rehan-remade/universal-modder",
+    "stars": 1808,
+    "forks": 133,
+    "open_issues": 4,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 2,
+    "slope": 301.1666666666667,
+    "curvature": null,
+    "score": 0.5687036497234464,
+    "spam": false,
+    "weeks": [
+      1807
+    ],
+    "why": [
+      "日均新增 star 301",
+      "数据不足 14 天，无曲率",
+      "4 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1374998940,
+    "full_name": "ntfargo/Relapse-Exploit",
+    "description": "Exploit chain for PS5 7.00 - 13.60",
+    "language": "JavaScript",
+    "topics": [
+      "exploit",
+      "kernel",
+      "research",
+      "webkit"
+    ],
+    "url": "https://github.com/ntfargo/Relapse-Exploit",
+    "stars": 1634,
+    "forks": 392,
+    "open_issues": 10,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 15,
+    "slope": 272.1666666666667,
+    "curvature": null,
+    "score": 0.5404641554780283,
+    "spam": false,
+    "weeks": [
+      1633,
+      0,
+      0
+    ],
+    "why": [
+      "日均新增 star 272",
+      "数据不足 14 天，无曲率",
+      "10 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1372164083,
+    "full_name": "OffGridPete/Fieldwatch",
+    "description": "Receive-only Wi-Fi and Bluetooth LE observer for Android. MIT.",
+    "language": "Kotlin",
+    "topics": [],
+    "url": "https://github.com/OffGridPete/Fieldwatch",
+    "stars": 1639,
+    "forks": 193,
+    "open_issues": 8,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 17,
+    "slope": 253.33333333333334,
+    "curvature": null,
+    "score": 0.5324771591519494,
+    "spam": false,
+    "weeks": [
+      1520,
+      56,
+      60
+    ],
+    "why": [
+      "日均新增 star 253",
+      "数据不足 14 天，无曲率",
+      "8 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1378971656,
+    "full_name": "deepopen-com/deepopen",
+    "description": "非自回归System 1决策引擎，专为结构化类型决策场景设计  DeepOpen Multilingual, non-autoregressive System 1 decision engine. ",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/deepopen-com/deepopen",
+    "stars": 1949,
+    "forks": 219,
+    "open_issues": 14,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 11,
+    "slope": 155.0,
+    "curvature": null,
+    "score": 0.5106353564198359,
+    "spam": false,
+    "weeks": [
+      930,
+      1019
+    ],
+    "why": [
+      "日均新增 star 155",
+      "数据不足 14 天，无曲率",
+      "14 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1394011672,
+    "full_name": "openai/mcp-extensions",
+    "description": "Build plugins that feel like native, first-class features of ChatGPT.",
+    "language": "TypeScript",
+    "topics": [],
+    "url": "https://github.com/openai/mcp-extensions",
+    "stars": 673,
+    "forks": 35,
+    "open_issues": 12,
+    "subscribers": 0,
+    "window": "born7",
+    "age_days": 3,
+    "slope": 112.33333333333333,
+    "curvature": null,
+    "score": 0.5031536493483889,
+    "spam": false,
+    "weeks": [
+      674
+    ],
+    "why": [
+      "日均新增 star 112",
+      "数据不足 14 天，无曲率",
+      "12 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1397939439,
+    "full_name": "Edwardxlai/easyread",
+    "description": "把英文论文读成舒服的中文：本地 PDF 论文翻译、原文对照、边读边问 AI、文献管理。Read English papers in comfortable Chinese.",
+    "language": "JavaScript",
+    "topics": [
+      "academic",
+      "arxiv",
+      "chinese",
+      "claude-code",
+      "codex",
+      "electron",
+      "llm",
+      "paper-reading",
+      "pdf-translator",
+      "reference-manager",
+      "research-tool",
+      "translation"
+    ],
+    "url": "https://github.com/Edwardxlai/easyread",
+    "stars": 573,
+    "forks": 43,
+    "open_issues": 2,
+    "subscribers": 0,
+    "window": "born7",
+    "age_days": 2,
+    "slope": 95.5,
+    "curvature": null,
+    "score": 0.4943457636682355,
+    "spam": false,
+    "weeks": [
+      573
+    ],
+    "why": [
+      "日均新增 star 96",
+      "数据不足 14 天，无曲率",
+      "2 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1396918266,
+    "full_name": "OpSafari/hypoarena",
+    "description": "Scientific hypothesis-discovery workbench: grounded hypothesis-evidence graphs, synthetic literature with planted causal chains, generate-debate-evolve loops over pluggable offline adapters, Elo tournaments recovering planted skill order, paraphrase dedup, Bayesian evidence accumulation, reproducible reports. NumPy core, CPU-only torch extra.",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/OpSafari/hypoarena",
+    "stars": 555,
+    "forks": 28,
+    "open_issues": 17,
+    "subscribers": 0,
+    "window": "born7",
+    "age_days": 2,
+    "slope": 92.5,
+    "curvature": null,
+    "score": 0.49228840829754433,
+    "spam": false,
+    "weeks": [
+      555
+    ],
+    "why": [
+      "日均新增 star 92",
+      "数据不足 14 天，无曲率",
+      "17 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1391506818,
+    "full_name": "chasmlol/2010-rust-rewrite-mashup",
+    "description": "MW2, Skate 3 and Minecraft in one Rust game: IW4L's MW2 rewrite with Skate 3 mode and a real Minecraft world map",
+    "language": "Rust",
+    "topics": [],
+    "url": "https://github.com/chasmlol/2010-rust-rewrite-mashup",
+    "stars": 577,
+    "forks": 38,
+    "open_issues": 32,
+    "subscribers": 0,
+    "window": "born7",
+    "age_days": 5,
+    "slope": 96.16666666666667,
+    "curvature": null,
+    "score": 0.4897942623229722,
+    "spam": false,
+    "weeks": [
+      577
+    ],
+    "why": [
+      "日均新增 star 96",
+      "数据不足 14 天，无曲率",
+      "32 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1382467199,
+    "full_name": "JohnHeibel/PDoomVideo",
+    "description": "Source code for the Claude Opus 5.5 music video for I'm Upping My P(doom)",
+    "language": "JavaScript",
+    "topics": [],
+    "url": "https://github.com/JohnHeibel/PDoomVideo",
+    "stars": 1689,
+    "forks": 184,
+    "open_issues": 5,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 10,
+    "slope": 100.66666666666667,
+    "curvature": null,
+    "score": 0.48441012102740183,
+    "spam": false,
+    "weeks": [
+      604,
+      1085
+    ],
+    "why": [
+      "日均新增 star 101",
+      "数据不足 14 天，无曲率",
+      "5 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1366969284,
+    "full_name": "linguo2625469/workbuddy2api-panel",
+    "description": "把腾讯WorkBuddy账号变成 OpenAI 兼容 API 的多账号网关，同时自动完成任务中心全部任务，附 Web 管理面板（账号池可视化 / 积分任务 / 配置热更新）。基于 Sliverkiss/workbuddy2api 的增强分支",
+    "language": "Go",
+    "topics": [
+      "admin-panel",
+      "codebuddy",
+      "gateway",
+      "golang",
+      "openai-api",
+      "reverse-proxy",
+      "workbuddy"
+    ],
+    "url": "https://github.com/linguo2625469/workbuddy2api-panel",
+    "stars": 1680,
+    "forks": 481,
+    "open_issues": 37,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 20,
+    "slope": 97.83333333333333,
+    "curvature": null,
+    "score": 0.46590218311375947,
+    "spam": false,
+    "weeks": [
+      587,
+      546,
+      507,
+      40
+    ],
+    "why": [
+      "日均新增 star 98",
+      "数据不足 14 天，无曲率",
+      "37 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1369262910,
+    "full_name": "QwenLM/Qwen-Image-2.1",
+    "description": "Qwen's most powerful open-source image generation model",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/QwenLM/Qwen-Image-2.1",
+    "stars": 1668,
+    "forks": 99,
+    "open_issues": 19,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 18,
+    "slope": 21.833333333333332,
+    "curvature": null,
+    "score": 0.37378539751591444,
+    "spam": false,
+    "weeks": [
+      131,
+      1537,
+      0
+    ],
+    "why": [
+      "日均新增 star 22",
+      "数据不足 14 天，无曲率",
+      "19 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1376713674,
+    "full_name": "pallavi-shekhar/ai-engineering-interview-questions-company-wise",
+    "description": "Your Cheat Sheet For AI Engineering Interviews at Top AI Companies - Questions and Answers.",
+    "language": "Markdown",
+    "topics": [
+      "ai",
+      "ai-engineering",
+      "ai-engineering-interview",
+      "ai-interview",
+      "ai-interview-questions",
+      "company-wise-prep",
+      "company-wise-questions",
+      "interview-questions",
+      "llm-inference",
+      "questions-and-answers"
+    ],
+    "url": "https://github.com/pallavi-shekhar/ai-engineering-interview-questions-company-wise",
+    "stars": 1607,
+    "forks": 162,
+    "open_issues": 0,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 13,
+    "slope": 39.2,
+    "curvature": null,
+    "score": 0.36896724129600383,
+    "spam": false,
+    "weeks": [
+      196,
+      1237,
+      174
+    ],
+    "why": [
+      "日均新增 star 39",
+      "数据不足 14 天，无曲率"
+    ]
+  },
+  {
+    "id": 1359610661,
+    "full_name": "EverettFish/holo-card-studio",
+    "description": "Turn the user's description or uploaded reference into a finished, editable Blender card and an interactive Three.js page. Preserve the requested subject, style, typography and destination. This skill contains code and text only; generated artwork belongs in the user's output project.",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/EverettFish/holo-card-studio",
+    "stars": 1856,
+    "forks": 249,
+    "open_issues": 4,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 25,
+    "slope": 10.2,
+    "curvature": null,
+    "score": 0.3157160367338605,
+    "spam": false,
+    "weeks": [
+      51,
+      120,
+      216,
+      1469
+    ],
+    "why": [
+      "日均新增 star 10",
+      "数据不足 14 天，无曲率",
+      "4 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1360317501,
+    "full_name": "achimala/dream-loop",
+    "description": "Agent skill for impressive 3D visuals using Blender + image gen + subagent critic",
+    "language": "JavaScript",
+    "topics": [],
+    "url": "https://github.com/achimala/dream-loop",
+    "stars": 1613,
+    "forks": 170,
+    "open_issues": 4,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 25,
+    "slope": 7.666666666666667,
+    "curvature": null,
+    "score": 0.29901114732100664,
+    "spam": false,
+    "weeks": [
+      46,
+      139,
+      504,
+      924
+    ],
+    "why": [
+      "日均新增 star 8",
+      "数据不足 14 天，无曲率",
+      "4 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1358346534,
+    "full_name": "donvito/codex-astra-luna-orchestrator",
+    "description": "Use Astra or Sol as orchestrator and Luna for subagents in Codex",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/donvito/codex-astra-luna-orchestrator",
+    "stars": 1669,
+    "forks": 133,
+    "open_issues": 6,
+    "subscribers": 0,
+    "window": "born30",
+    "age_days": 27,
+    "slope": 6.0,
+    "curvature": null,
+    "score": 0.2817647060021385,
+    "spam": false,
+    "weeks": [
+      36,
+      150,
+      384,
+      1022,
+      77
+    ],
+    "why": [
+      "日均新增 star 6",
+      "数据不足 14 天，无曲率",
+      "6 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1292618358,
+    "full_name": "github/dev-days",
+    "description": null,
+    "language": "HTML",
+    "topics": [],
+    "url": "https://github.com/github/dev-days",
+    "stars": 99,
+    "forks": 24,
+    "open_issues": 1,
+    "subscribers": 0,
+    "window": "born90",
+    "age_days": 87,
+    "slope": 1.6,
+    "curvature": null,
+    "score": 0.1172460021956227,
+    "spam": false,
+    "weeks": [
+      8,
+      12,
+      7,
+      9,
+      48,
+      4,
+      4,
+      6
+    ],
+    "why": [
+      "日均新增 star 2",
+      "数据不足 14 天，无曲率",
+      "1 个未关闭 issue，有人在用"
+    ]
+  },
+  {
+    "id": 1293451909,
+    "full_name": "DerekH-233/AMDL",
+    "description": "一个美观的 Apple Music 下载桌面工具，基于 gamdl 构建。支持歌曲、专辑、歌单、MV 下载。",
+    "language": "Python",
+    "topics": [],
+    "url": "https://github.com/DerekH-233/AMDL",
+    "stars": 99,
+    "forks": 4,
+    "open_issues": 0,
+    "subscribers": 0,
+    "window": "born90",
+    "age_days": 86,
+    "slope": 0.2,
+    "curvature": null,
+    "score": 0.01854385357381038,
+    "spam": false,
+    "weeks": [
+      1,
+      3,
+      2,
+      4,
+      8,
+      4,
+      2,
+      1
+    ],
+    "why": [
+      "日均新增 star 0",
+      "数据不足 14 天，无曲率"
+    ]
+  }
+]

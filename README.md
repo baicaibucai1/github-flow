@@ -1,0 +1,85 @@
+# GitHub 信息流 · gh-feed
+
+本地优先的 GitHub 项目发现器。不是 GitHub 客户端——它只解决一件事：**帮你决定要不要深入看某个项目**。
+
+状态：**可运行的原型**。窗口能开、数据是真的、推送会随你的行为变化。未发布、未签名。
+
+## 它跟 "trending 列表" 的区别
+
+GitHub 没有 trending 接口，官方页面的排序也是黑盒。所以这里把两件事拆开：
+
+- **测量**有官方接口：`GET /repos/{owner}/{repo}/stargazers/history` 一次请求拿到一个项目从出生到今天的**每周新增 star 曲线**。实测各周之和与 `stargazers_count` 自洽（差 1，即未满的当天）。
+- **发现**没有官方接口，只能自己造候选：限定出生窗口后，"累计 star" 就等于"这段时间涨的 star"，于是 `created:>N天 + sort=stars` 本身就是增速榜。
+
+热度可以问 GitHub，名单必须自己造——整个架构由此展开。
+
+## 三条推送通道
+
+| 通道 | 来源 | 作用 |
+|---|---|---|
+| 画像 | 你的收藏/仓库 → TF-IDF 加权词表 → 生成 search 查询 → RRF 融合 | 懂你的口味 |
+| 热度 | 出生 ≤7/30/90 天 × star 档位，再用周曲线复核斜率与曲率 | 抓住正在起跳的项目 |
+| 探索 | 出生 ≤7 天、star 1..19 的新生池，按语言分层随机抽 | 破兴趣气泡，制造"我提前发现了它" |
+
+排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权。**MVP 不用任何大模型**，全部是可解释的统计量。
+
+## 已实测的关键事实
+
+- 未登录配额：core 60/h、search 10/min、**GraphQL 0**（`/rate_limit` 实测，该请求不计配额）
+- search 每个查询**最多翻到 1000 条**（`page=11` → 422）；非法 `sort` 值被静默忽略
+- 近 7 天出生且涨到 20+ star 的项目，全 GitHub 只有 **526 个** → 候选池不需要切网格
+- GitHub search 是词面 AND：同一意图换措辞，前 20 名结果只重合 **1/20** → 所以匹配必须在本地做，search 只当进料口
+- 新项目 72% 没有 topics、16% 没有简介、简介平均 101 字符；`in:readme` 会炸出 10 万条垃圾
+- 新项目的 `stargazers/history` 只有 1 个周桶 → 斜率要用桶内的 `days[7]` 每日数组算
+- 新项目 watcher 普遍为 0 → 任何 `watchers/stars` 反作弊规则都必须加 star 门槛，否则会把整个新秀通道判成刷量
+- 内嵌 WebView 加载 github.com 返回 200（`frame-ancestors 'none'` 只约束被嵌入，不约束顶层文档；**iframe 方案永久不可行**）
+- API 渲染的 README **保留相对图片路径**，不处理会被解析成 `tauri.localhost/...` 并返回 200 假成功
+
+## 为什么是本地优先
+
+行为日志只留本机，**没有服务端，也不回传**。代价很明确：达不到流媒体那种"懂所有人"的精准，因为群体协同过滤需要跨用户数据。换来的是：不需要账号系统、不需要服务器、隐私承诺是真的。
+
+唯一的例外是翻译——开启后被翻译的简介会发给第三方翻译服务，所以默认关闭，设置页里写明。
+
+## 目录
+
+```
+src-tauri/
+  src/feed.rs        取数、配额记账、落库、斜率、规则、排序（唯一出入口）
+  src/main.rs        Tauri 命令层
+  src/bin/collect.rs CLI：采集 / 画像 / 探索 / 详情 / 校准 / 设置
+dist/index.html      界面（双列卡片 + 频道标签 + 左导航 + 设置）
+docs/                推送子系统技术手册 v0.1.1
+measurements/        上面那些"已实测事实"的原始响应与复跑脚本
+tools/               WebView2 承载探针（.NET，用于在不装 MSVC 的情况下验证内嵌浏览）
+```
+
+## 构建
+
+Tauri 2 走 **GNU 工具链**（不需要 Visual Studio）。依赖 MinGW 在 PATH 里：
+
+```bash
+export PATH=/path/to/msys64/mingw64/bin:$PATH   # dlltool/windres 要能找到
+cd src-tauri && cargo build                     # 首次约 2~3 分钟
+./target/debug/ghfind
+```
+
+采集器可以单独跑（不依赖界面）：
+
+```bash
+./target/debug/collect.exe 1 12        # 热度采集：每查询 1 页、补测 12 条曲线
+./target/debug/collect.exe explore 3   # 探索池：每语言抽 3 个
+./target/debug/collect.exe profile <login>   # 建画像并检索
+./target/debug/collect.exe calibrate   # 分桶校准（样本 <20 的桶不生效）
+./target/debug/collect.exe stats       # 看事件计数
+```
+
+数据与凭据都在 `%LOCALAPPDATA%\ghfind\`（`ghfind.db`、`accounts.json`），**都不进仓库**。
+
+## 还没做
+
+- 收藏的组织结构（分类/标签/稍后看）
+- 内容策略口径（破解工具、疑似营销号推不推）
+- CSP（README 是外部 HTML，目前只靠正则清洗）
+- 凭据换成系统钥匙串（现在是本机单独文件）
+- 代码签名与自动更新（双平台约 $400~600/年）

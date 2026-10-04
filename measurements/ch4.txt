@@ -1,0 +1,1 @@
+Code: 516. DB::Exception: demo: Authentication failed: password is incorrect, or there is no user with such name. (AUTHENTICATION_FAILED)

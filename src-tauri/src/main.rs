@@ -1,0 +1,199 @@
+// Windows 发布版不要弹出那个黑色控制台窗口。
+// 注意只在非 debug 下生效 —— 开发时要留着它看 panic 信息。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod feed;
+
+/// 界面拿榜单：每次调用都现读 SQLite，所以刷新数据不需要重编译应用。
+#[tauri::command]
+fn get_feed(limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
+  let conn = feed::open_db()?;
+  Ok(feed::load_feed(&conn, &feed::current_login(&conn), limit.unwrap_or(40), offset.unwrap_or(0)))
+}
+
+#[tauri::command]
+fn feed_stats() -> Result<serde_json::Value, String> {
+  let conn = feed::open_db()?;
+  let n: i64 = conn
+    .query_row("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL", [], |r| r.get(0))
+    .unwrap_or(0);
+  let terms = feed::profile_terms(&conn, &feed::current_login(&conn));
+  Ok(serde_json::json!({
+    "pool": feed::pool_size(&conn), "ranked": n,
+    "login": feed::current_login(&conn),
+    "terms": terms.iter().map(|(t, w)| format!("{t} {w:.2}")).collect::<Vec<_>>()
+  }))
+}
+
+#[tauri::command]
+async fn run_collect(pages: i64, curve_n: i64) -> Result<String, String> {
+  tauri::async_runtime::spawn_blocking(move || match feed::open_db() {
+    Ok(conn) => feed::run_collect(&conn, pages, curve_n, &mut |m| println!("{m}")),
+    Err(e) => Err(e),
+  })
+  .await
+  .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn run_profile(login: String, pages: i64) -> Result<String, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let conn = feed::open_db()?;
+    let mut log = String::new();
+    for step in [
+      feed::build_profile(&conn, &login, pages, &mut |m| println!("{m}")),
+      feed::run_profile_search(&conn, &login, &mut |m| println!("{m}")),
+    ] {
+      match step { Ok(s) => log.push_str(&s), Err(e) => return Err(e) }
+      log += "
+";
+    }
+    Ok(log)
+  })
+  .await
+  .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn log_impression(repo_id: i64, slot: i64, channel: String, session: String) -> Result<i64, String> {
+  let conn = feed::open_db()?;
+  feed::log_impression(&conn, repo_id, slot, &channel, &session)
+}
+
+#[tauri::command]
+fn log_event(kind: String, repo_id: i64, payload: Option<String>, impression_id: Option<i64>) -> Result<serde_json::Value, String> {
+  let conn = feed::open_db()?;
+  feed::log_event(&conn, &kind, repo_id, payload.clone(), impression_id)?;
+  let learned = feed::apply_feedback(&conn, &feed::current_login(&conn), repo_id, &kind, payload.as_deref());
+  Ok(serde_json::json!({ "learned": learned }))
+}
+
+#[tauri::command]
+fn get_stats() -> Result<serde_json::Value, String> {
+  let conn = feed::open_db()?;
+  Ok(feed::stats(&conn))
+}
+
+/// 界面里的 JS 把关键事件写进这个文件，否则我隔着 WebView 什么都看不见
+#[tauri::command]
+fn js_log(msg: String) -> Result<(), String> {
+  use std::io::Write;
+  let dir = std::env::var("LOCALAPPDATA").map_err(|e| e.to_string())?;
+  let path = format!("{dir}\\ghfind\\ui.log");
+  let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
+  writeln!(f, "{msg}").map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn calibrate_now() -> Result<String, String> {
+  let conn = feed::open_db()?;
+  feed::calibrate(&conn)
+}
+
+#[tauri::command]
+fn get_channel(channel: String, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
+  let conn = feed::open_db()?;
+  Ok(feed::load_channel(&conn, &feed::current_login(&conn), &channel, limit.unwrap_or(40), offset.unwrap_or(0)))
+}
+
+#[tauri::command]
+async fn do_explore(per_lang: Option<i64>) -> Result<String, String> {
+  let n = per_lang.unwrap_or(2);
+  tauri::async_runtime::spawn_blocking(move || {
+    let conn = feed::open_db()?;
+    feed::run_explore(&conn, n, &mut |s| println!("{s}"))
+  }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn do_search(query: String) -> Result<String, String> {
+  let q = query.clone();
+  tauri::async_runtime::spawn_blocking(move || {
+    let conn = feed::open_db()?;
+    let login = feed::current_login(&conn);
+    feed::search_repos(&conn, &q, &login, &mut |s| println!("{s}"))
+  }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn settings_json() -> Result<serde_json::Value, String> { let c = feed::open_db()?; Ok(feed::get_settings(&c)) }
+
+#[tauri::command]
+fn set_setting_cmd(key: String, value: String) -> Result<(), String> {
+  let c = feed::open_db()?; feed::set_setting(&c, &key, &value)
+}
+
+#[tauri::command]
+fn do_translate(texts: Vec<String>) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let s = feed::get_settings(&c);
+  Ok(feed::translate(&c, s["translate_url"].as_str().unwrap_or(""), s["lang"].as_str().unwrap_or("zh-CN"), &texts))
+}
+
+#[tauri::command]
+fn get_detail(repo_id: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  Ok(feed::repo_detail(&c, repo_id, &mut |s| println!("{s}")))
+}
+
+#[tauri::command]
+fn open_in_app_window(app: tauri::AppHandle, url: String, repo_id: i64) -> Result<String, String> {
+  feed::open_webview(&app, &url, repo_id)
+}
+
+#[tauri::command]
+fn set_token_cmd(token: String) -> Result<serde_json::Value, String> {
+  feed::store_token(&token).map_err(|e| e.to_string())?;
+  if token.trim().is_empty() { return Ok(serde_json::json!({"cleared": true})); }
+  Ok(feed::whoami(&mut |s| println!("{s}")))
+}
+
+#[tauri::command]
+fn build_my_profile(pages: Option<i64>) -> Result<String, String> {
+  let conn = feed::open_db()?;
+  let login = feed::active_login(&conn);
+  if login.is_empty() { return Err("还没验证过账号".into()); }
+  let mut log = String::new();
+  for step in [
+    feed::build_profile(&conn, &login, pages.unwrap_or(5), &mut |s| println!("{s}")),
+    feed::run_profile_search(&conn, &login, &mut |s| println!("{s}")),
+    feed::measure_top(&conn, 40, &mut |s| println!("{s}")),
+  ] { log.push_str(&step?); log.push('\n'); }
+  let _ = feed::set_setting(&conn, "active_login", &login);
+  Ok(log)
+}
+
+#[tauri::command]
+fn login_start(client_id: String, scopes: Option<String>) -> Result<serde_json::Value, String> {
+  feed::device_start(&client_id, scopes.unwrap_or_else(|| "read:user public_repo".into()).as_str())
+}
+
+#[tauri::command]
+fn login_poll(client_id: String, device_code: String) -> Result<serde_json::Value, String> {
+  feed::device_poll(&client_id, &device_code)
+}
+
+#[tauri::command]
+fn accounts_list() -> serde_json::Value { feed::accounts_json() }
+
+#[tauri::command]
+fn account_activate(login: String) -> Result<(), String> {
+  let c = feed::open_db()?; feed::set_setting(&c, "active_login", &login)
+}
+
+#[tauri::command]
+fn account_remove(login: String) -> Result<(), String> { feed::remove_account(&login) }
+
+#[tauri::command]
+fn add_pat(token: String) -> Result<serde_json::Value, String> { feed::add_pat_account(&token) }
+
+fn main() {
+  tauri::Builder::default()
+    // 自动更新。没有这两个插件注册，前端调 check() 会报
+    // "command not found"，而不是给出任何有用的提示。
+    .plugin(tauri_plugin_updater::Builder::new().build())
+    .plugin(tauri_plugin_process::init())
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, set_token_cmd, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat])
+    .run(tauri::generate_context!())
+    .expect("启动 Tauri 应用失败");
+}

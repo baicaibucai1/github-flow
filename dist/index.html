@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>GitHub 发现器</title>
+<style>
+ /* 颜色全部走变量：浅色是默认，深色只是一层覆盖 */
+ :root{color-scheme:light;
+   --bg:#ffffff; --panel:#f6f8fa; --panel2:#eaeef2; --line:#d0d7de; --txt:#1f2328;
+   --dim:#656d76; --acc:#0969da; --hot:#bc4c00; --good:#1a7f37; --warn:#9a6700; --bad:#cf222e;
+   --chip:#ddf4ff; --chipTxt:#0a5394; --ok:#dafbe1; --okTxt:#1a7f37; --rail:#f6f8fa; --input:#ffffff}
+ :root[data-theme="dark"]{color-scheme:dark;
+   --bg:#0d1117; --panel:#161b22; --panel2:#21262d; --line:#30363d; --txt:#e6edf3;
+   --dim:#8d96a0; --acc:#4493f8; --hot:#f78166; --good:#3fb950; --warn:#f0883e; --bad:#f85149;
+   --chip:#1f2937; --chipTxt:#9ecbff; --ok:#132f25; --okTxt:#7ee787; --rail:#0b0f14; --input:#0b0f14}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--txt);
+   font:15px/1.55 -apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif}
+ .app{display:grid;grid-template-columns:64px 1fr;min-height:100vh}
+
+ .rail{border-right:1px solid var(--line);background:var(--rail);display:flex;flex-direction:column;
+   align-items:center;padding:12px 0;gap:6px;position:sticky;top:0;height:100vh}
+ .rail button{width:46px;height:46px;border:0;background:transparent;color:var(--dim);
+   border-radius:10px;font-size:10.5px;cursor:pointer;display:flex;flex-direction:column;
+   align-items:center;justify-content:center;gap:2px;padding:0;font-family:inherit}
+ .rail button .ic{font-size:17px;line-height:1}
+ .rail button.on{background:color-mix(in srgb, var(--acc) 16%, transparent);color:var(--acc)}
+ .rail .sp{flex:1}
+
+ main{min-width:0;padding:0 22px 70px}
+ .top{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;
+   border-bottom:1px solid var(--line);margin-bottom:14px}
+ .row1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+ h1{font-size:15px;margin:0;font-weight:650;white-space:nowrap}
+ .search{flex:1;min-width:180px;display:flex;gap:6px}
+ .search input{flex:1;background:var(--input);border:1px solid var(--line);color:var(--txt);
+   border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;outline:none}
+ .search input:focus{border-color:var(--acc)}
+ .tabs{display:flex;gap:4px;margin-top:10px;flex-wrap:wrap}
+ .tabs button{border:0;background:transparent;color:var(--dim);padding:5px 12px;border-radius:999px;
+   font:inherit;font-size:13px;cursor:pointer;font-family:inherit}
+ .tabs button.on{background:var(--panel);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line)}
+ .meta{color:var(--dim);font-size:12px;margin:12px 0}
+ .meta b{color:var(--txt)}
+ .meta a{color:var(--acc)}
+
+ .grid{columns:2;column-gap:14px}
+ @media (max-width:900px){.grid{columns:1}}
+ .card,.panel{break-inside:avoid;background:var(--panel);border:1px solid var(--line);
+   border-radius:12px;padding:13px 14px;margin:0 0 14px;position:relative}
+ .card.dim{opacity:.55}
+ .nm{font-size:15px;font-weight:650;margin:0;line-height:1.35}
+ .nm a{color:var(--acc);text-decoration:none;word-break:break-all}
+ .ln{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0;font-size:11px;color:var(--dim)}
+ .tag{background:var(--panel2);border-radius:4px;padding:1px 6px}
+ .tag.p{color:var(--good);background:var(--ok)}
+ .tag.e{color:#8250df;background:color-mix(in srgb,#8250df 14%,transparent)}
+ .tag.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
+ .tag.spam{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+ .ds{margin:8px 0 0;color:var(--txt);font-size:13.5px}
+ .orig{margin:4px 0 0;color:var(--dim);font-size:11.5px}
+ .chips{margin:8px 0 0}
+ .chips span{display:inline-block;background:var(--chip);color:var(--chipTxt);border-radius:999px;
+   padding:0 8px;font-size:11px;margin:0 5px 5px 0}
+ .st{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;font-size:12px;color:var(--dim)}
+ .st b{color:var(--txt);font-weight:600}
+ .curve{margin-top:9px;background:var(--bg);border-radius:8px;padding:7px 9px}
+ .spark rect{fill:var(--hot)} .spark .last{fill:var(--good)}
+ .why{margin-top:8px;font-size:11.5px;color:var(--dim)}
+ .why i{font-style:normal;background:var(--ok);color:var(--okTxt);border-radius:4px;
+   padding:1px 6px;margin:0 5px 5px 0;display:inline-block}
+ .why i.neg{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+ .why i.na{background:var(--panel2);color:var(--dim)}
+ .acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;opacity:.55;transition:opacity .12s}
+ .card:hover .acts{opacity:1}
+ .acts button{border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:6px;
+   padding:2px 8px;font-size:11.5px;cursor:pointer;font-family:inherit}
+ .acts button:hover{background:var(--panel2)}
+ .acts button.done{border-color:var(--acc);color:var(--acc)}
+ .like{position:absolute;top:10px;right:12px;font-size:11.5px;color:var(--dim)}
+ .menu{position:absolute;z-index:20;background:var(--panel);border:1px solid var(--line);
+   border-radius:8px;padding:5px;display:none;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+ .menu div{padding:5px 10px;font-size:12.5px;border-radius:5px;cursor:pointer;white-space:nowrap}
+ .menu div:hover{background:var(--panel2)}
+ .empty{padding:50px;text-align:center;color:var(--dim)}
+ .more{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;
+   padding:6px 16px;font:inherit;font-size:13px;cursor:pointer;font-family:inherit}
+ .more:hover{background:var(--panel2)}
+ h3{font-size:14px;margin:18px 0 6px}
+ .set{display:flex;align-items:center;justify-content:space-between;gap:14px;
+   padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+ .set small{display:block;color:var(--dim);font-size:11.5px;margin-top:2px;max-width:520px}
+ .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex:none}
+ .seg button{border:0;background:var(--bg);color:var(--dim);padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;font-family:inherit}
+ .seg button.on{background:var(--acc);color:#fff}
+ input.url{background:var(--input);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+   padding:4px 8px;font-size:12px;width:300px;font-family:ui-monospace,Consospace,monospace}
+ .dbg{color:var(--dim);font-size:11px;margin-top:16px;word-break:break-all;opacity:.7}
+ code{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="rail">
+    <button data-v="feed" class="on" onclick="view('feed',this)"><span class="ic">◎</span>发现</button>
+    <button data-v="saved" onclick="view('saved',this)"><span class="ic">★</span>收藏</button>
+    <button data-v="stats" onclick="view('stats',this)"><span class="ic">▤</span>统计</button>
+    <button data-v="set" onclick="view('set',this)"><span class="ic">⚙</span>设置</button>
+    <span class="sp"></span>
+    <button onclick="toggleTheme()" title="切换黑白"><span class="ic" id="tIc">◐</span>主题</button>
+    <button onclick="toggleDbg()"><span class="ic">⌗</span>调试</button>
+  </nav>
+  <main>
+    <div class="top">
+      <div class="row1">
+        <h1>GitHub 发现器</h1>
+        <div class="search">
+          <input id="q" placeholder="搜你想看的（回车：这个词会进你的兴趣画像）" onkeydown="if(event.key==='Enter')doSearch()">
+          <button class="more" onclick="doSearch()">搜索</button>
+        </div>
+      </div>
+      <div class="tabs" id="tabs"></div>
+    </div>
+    <div class="meta" id="meta">加载中…</div>
+    <div id="body"></div>
+    <div class="dbg" id="dbg" style="display:none"></div>
+  </main>
+</div>
+<div class="menu" id="menu"></div>
+<script>
+const T = window.__TAURI__;
+const J = m => { try { if (T) T.core.invoke('js_log', { msg: new Date().toISOString().slice(11,19) + ' ' + m }); } catch(e){} };
+window.addEventListener('error', e => J('JSERR ' + e.message + ' @' + (e.lineno||'?')));
+const call = (c, a) => T ? T.core.invoke(c, a) : Promise.reject(new Error('非 Tauri 环境'));
+const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+const SESSION = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,7);
+const LIMIT = 40;
+let CH = 'hot', shown = 0, dbgOn = false;
+let SET = { theme:'light', translate_on:'0', lang:'zh-CN', translate_url:'' };
+const TR = new Map();                       // 会话内译文缓存，避免同一段话翻两次
+const TABS = [['hot','热度'],['profile','画像'],['explore','探索'],['saved','收藏']];
+
+function applyTheme(){
+  document.documentElement.dataset.theme = SET.theme === 'system'
+    ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : SET.theme;
+  document.getElementById('tIc').textContent = document.documentElement.dataset.theme === 'dark' ? '☾' : '☀';
+}
+function toggleTheme(){ set('theme', (document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')); }
+async function set(k, v){
+  SET[k] = String(v); applyTheme();
+  try{ await call('set_setting_cmd', { key:k, value:String(v) }); }catch(e){ J('set FAIL '+e); }
+  if (k === 'translate_on' && v === '1') translateVisible();
+  if (document.getElementById('body').dataset.v === 'set') settingsView();
+}
+function toggleDbg(){ dbgOn = !dbgOn; document.getElementById('dbg').style.display = dbgOn ? '' : 'none'; }
+function dbg(t){ const d=document.getElementById('dbg'); if(d&&dbgOn) d.textContent='[dbg] '+t; }
+
+function tabs(){ document.getElementById('tabs').innerHTML = TABS.map(t =>
+  `<button class="${t[0]===CH?'on':''}" onclick="tab('${t[0]}')">${t[1]}</button>`).join(''); }
+function tab(c){ CH=c; shown=0; document.getElementById('body').innerHTML=''; tabs(); load(); }
+function view(v, btn){
+  shown = 0; document.getElementById('body').innerHTML='';
+  document.querySelectorAll('.rail button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v===v));
+  const tabsEl = document.getElementById('tabs');
+  if (v === 'feed' || v === 'saved') { CH = v === 'feed' ? 'hot' : 'saved'; tabs(); tabsEl.style.display=''; load(); }
+  else { tabsEl.style.display='none'; if (v==='stats') statsView(); else settingsView(); }
+}
+
+function spark(w){
+  if(!w || !w.length) return '';
+  const a=w.slice(0,8).reverse(), max=Math.max(...a,1), step=20;
+  const bars=a.map((v,i)=>{const h=Math.max(2,v/max*30);
+    return `<rect class="${i===a.length-1?'last':''}" x="${i*step}" y="${32-h}" width="14" height="${h}" rx="2"/>`}).join('');
+  return `<div class="curve"><svg class="spark" width="${a.length*step}" height="34">${bars}</svg>
+    <div class="st"><span>周峰值 <b>+${max.toLocaleString()}</b> · ${a.length} 周</span></div></div>`;
+}
+function card(c, i){
+  const why=(c.why||[]).map(t=>{const cls=/降权|不成比例/.test(t)?'neg':(/不足|尚未/.test(t)?'na':'');
+    return `<i class="${cls}">${esc(t)}</i>`}).join('');
+  const chan=c.channel==='profile'?'<span class="tag p">画像</span>':c.window==='explore'?'<span class="tag e">探索</span>':'';
+  return `<article class="card" data-id="${c.id}" data-slot="${i}" data-chan="${esc(c.channel)}" data-desc="${esc(c.description||'')}">
+    <div class="like">${c.saved?'★ 已收藏':''}</div>
+    <h2 class="nm"><a href="#" onclick="openRepo(this,${c.id},'${esc(c.url)}');return false">${esc(c.full_name)}</a></h2>
+    <div class="ln">${chan}<span class="tag">出生 ${c.age_days} 天</span>
+      <span class="tag">score ${c.score.toFixed(3)}</span>
+      ${c.spam?'<span class="tag spam">降权</span>':''}${c.slope==null?'<span class="tag warn">斜率未知</span>':''}</div>
+    <p class="ds">${esc(c.description)||'<span class="tag">（无简介）</span>'}</p>
+    <div class="chips">${(c.topics||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div>
+    <div class="st"><span><b>${c.stars.toLocaleString()}</b> star</span><span><b>${c.forks}</b> fork</span>
+      <span><b>${c.subscribers}</b> watch</span><span><b>${c.open_issues}</b> issue</span>
+      <span>日均 <b>${c.slope==null?'—':c.slope.toFixed(0)}</b></span></div>
+    ${spark(c.weeks)}
+    <div class="why">${why}</div>
+    <div class="acts">
+      <button onclick="saveRepo(this,${c.id})">${c.saved?'已收藏':'收藏'}</button>
+      <button onclick="hideMenu(event,${c.id},this)">不感兴趣</button>
+      <button onclick="ext(this,'open_in_browser',${c.id},'${esc(c.url)}')">浏览器打开</button>
+      <button onclick="ext(this,'copy_clone',${c.id},'git clone ${esc(c.url)}.git')">clone</button>
+    </div>
+  </article>`;
+}
+
+// ---------- 翻译：只翻简介。项目名是专有名词，翻成中文只会更难认
+async function translateVisible(){
+  if (SET.translate_on !== '1') return;
+  const cards = [...document.querySelectorAll('[data-desc]')];
+  const need = [...new Set(cards.map(c=>c.dataset.desc).filter(d=>d && d.length>3 && !TR.has(d)))].slice(0, 8);
+  if (!need.length) { cards.forEach(applyTr); return; }
+  try{
+    const r = await call('do_translate', { texts: need });
+    Object.entries(r.map || {}).forEach(([k,v]) => TR.set(k, v));
+    J(`translate net=${r.net} cached=${r.cached}`);
+    cards.forEach(applyTr);
+  }catch(e){ J('translate FAIL '+e); }
+}
+function applyTr(el){
+  const src = el.dataset.desc; if(!src || !TR.has(src)) return;
+  const zh = TR.get(src); if(!zh || zh === src) return;
+  const p = el.matches('.ds') ? el : el.querySelector('.ds');
+  if (!p || p.dataset.tr === '1') return;
+  p.dataset.tr = '1';
+  p.innerHTML = esc(zh) + `<div class="orig">原文：${esc(src)}</div>`;
+}
+
+let io=null, timers={};
+function observe(){
+  if(!T || !('IntersectionObserver' in window)) return;
+  if(io) io.disconnect(); timers={};
+  io=new IntersectionObserver(async es=>{
+    for(const e of es){
+      const el=e.target, id=el.dataset.id;
+      if(e.isIntersecting){
+        if(el.dataset.counted||timers[id]) continue;
+        timers[id]=setTimeout(async()=>{ el.dataset.counted='1';
+          try{ await call('log_impression',{repoId:+id,slot:+el.dataset.slot,channel:el.dataset.chan,session:SESSION}); }
+          catch(err){ J('impression FAIL '+err); } },1000);
+      } else if(timers[id]){ clearTimeout(timers[id]); delete timers[id]; }
+    }
+  },{threshold:.5});
+  const cs=document.querySelectorAll('.card[data-id]');
+  cs.forEach(c=>io.observe(c));
+  J(`observe ${cs.length} chan=${CH}`);
+  translateVisible();
+}
+
+async function load(){
+  const box=document.getElementById('body');
+  try{
+    const list = T ? await call('get_channel',{channel:CH,limit:LIMIT,offset:shown}) : [];
+    if(!list.length && shown===0){
+      box.innerHTML = CH==='saved' ? '<div class="empty">还没有收藏。发现页点"收藏"就进这里。</div>'
+        : CH==='explore' ? '<div class="empty">探索池是空的 —— 去设置里点"取一批新生项目"</div>'
+        : '<div class="empty">榜是空的</div>';
+      document.getElementById('meta').textContent=''; return;
+    }
+    shown += list.length;
+    const old = box.querySelector('.grid');
+    if (old) old.insertAdjacentHTML('beforeend', list.map((c,i)=>card(c, shown-list.length+i)).join(''));
+    else box.innerHTML = `<div class="grid">${list.map((c,i)=>card(c,i)).join('')}</div>
+      <button class="more" style="display:block;margin:6px auto" onclick="load()">加载更多（已显示 ${shown}）</button>`;
+    observe();
+  }catch(e){ box.innerHTML=`<div class="empty">取不到：${esc(String(e))}</div>`; J('load FAIL '+e); }
+  stats(); dbg(`channel=${CH} shown=${shown}`);
+}
+
+async function saveRepo(btn,id){
+  try{
+    const r=await call('log_event',{kind:'star_in_app',repoId:id});
+    btn.textContent='已收藏'; btn.classList.add('done');
+    const learned=(r&&r.learned)||[];
+    document.getElementById('meta').innerHTML = learned.length
+      ? '已把这几个词加进兴趣画像：<b>'+learned.map(esc).join('</b>、<b>')+'</b> —— 下一轮抓取会找更多这类项目'
+      : '已收藏（这条没带可提取的词，画像不变）';
+    J('star id='+id+' learned='+learned.join('/')); stats();
+  }catch(e){ J('save FAIL '+e); }
+}
+async function openRepo(a,id,url){
+  try{ await call('log_event',{kind:'open',repoId:id}); }catch(e){}
+  detail(id);
+}
+
+// ---------- 应用内详情（L1）：README 在界面里渲染，停留/滚动才测得到
+let detailFrom = 'hot', dwellT = 0, dwellStart = 0, curDetail = null;
+function sanitize(html){
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/<a /gi, '<a target="_blank" rel="noreferrer" ');
+}
+async function detail(id){
+  const box=document.getElementById('body');
+  detailFrom = CH; document.getElementById('tabs').style.display='none';
+  box.dataset.v='detail'; box.innerHTML='<div class="empty">载入中…</div>';
+  let d;
+  try{ d = await call('get_detail', { repoId:id }); }
+  catch(e){ box.innerHTML=`<div class="empty">详情取不到：${esc(String(e))}</div>`; return; }
+  if (d.error){ box.innerHTML=`<div class="empty">${esc(d.error)}</div>`; return; }
+  curDetail = d;
+  const rel = String(d.releases||'').split('\n').filter(Boolean).map(r=>{
+    const p=r.split('|'); return `<li><b>${esc(p[0])}</b> <span class="tag">${esc(p[2])}</span><br><small>${esc(p[1])}</small></li>`;
+  }).join('');
+  document.getElementById('meta').innerHTML =
+    `<a href="#" onclick="back();return false">← 返回列表</a> · ${esc(d.full_name)}`;
+  box.innerHTML = `<div style="max-width:900px">
+    <h2 class="nm" style="font-size:19px"><a href="${esc(d.url)}" target="_blank" rel="noreferrer">${esc(d.full_name)}</a></h2>
+    <p class="ds" data-desc="${esc(d.description||'')}">${esc(d.description)||'（无简介）'}</p>
+    <div class="st" style="font-size:13px"><span><b>${Number(d.stars).toLocaleString()}</b> star</span>
+      <span><b>${d.forks}</b> fork</span><span><b>${d.subscribers}</b> watch</span>
+      <span><b>${d.open_issues}</b> issue</span><span>出生 <b>${d.age_days}</b> 天</span>
+      <span>日均新增 <b>${d.slope==null?'—':Number(d.slope).toFixed(0)}</b> star</span>
+      <span>曲率 <b>${d.curvature==null?'数据不足':Number(d.curvature).toFixed(2)}</b></span></div>
+    ${spark((d.weeks||[]).slice().reverse())}
+    <div class="acts" style="opacity:1">
+      <button onclick="saveRepo(this,${d.id})">${d.saved?'已收藏':'收藏'}</button>
+      <button onclick="inApp(${d.id},'${esc(d.url)}')">应用内浏览 GitHub</button>
+      <button onclick="window.open('${esc(d.url)}','_blank')">系统浏览器打开</button>
+      <button onclick="ext(this,'copy_clone',${d.id},'git clone ${esc(d.url)}.git')">复制 clone</button>
+      <button onclick="hideMenu(event,${d.id},this)">不感兴趣</button>
+    </div>
+    <div class="grid" style="columns:1;margin-top:14px">
+      ${(d.langs&&d.langs.length)?`<div class="panel"><h3 style="margin:0 0 6px">语言构成</h3><div class="ds">${d.langs.map(esc).join(' · ')}</div></div>`:''}
+      ${rel?`<div class="panel"><h3 style="margin:0 0 6px">最近 release</h3><ul class="ds" style="margin:0;padding-left:18px">${rel}</ul></div>`
+           :`<div class="panel"><h3 style="margin:0 0 6px">最近 release</h3><div class="ds">没有 release，或取不到</div></div>`}
+      <div class="panel"><h3 style="margin:0 0 6px">README</h3>
+        <div class="ds" id="rd">${sanitize(d.readme_html)||'<i>取不到 README</i>'}</div></div>
+    </div>
+  </div>`;
+  if (SET.translate_on === '1') translateVisible();
+  dwellStart = Date.now();
+  dwellT = setInterval(flushDwell, 5000);
+  J('detail open id=' + id + ' readme=' + String(d.readme_html||'').length + 'B');
+  diagImgs();
+}
+
+// 图片诊断：外部猜不如让页面自己报。区分"被拦"（fetch 抛 TypeError）与"取不到"（有响应但非 2xx）
+async function diagImgs(){
+  const imgs = [...document.querySelectorAll('#rd img')];
+  if (!imgs.length) { J('imgdiag: README 里没有 img'); return; }
+  // 在打开的那一刻读状态没有意义（图还在飞），所以等 4 秒读"落定"后的结果
+  await new Promise(r => setTimeout(r, 4000));
+  const rows = imgs.map(i => ({ src: i.currentSrc || i.src, ok: i.complete && i.naturalWidth > 0 }));
+  const ok = rows.filter(r => r.ok).length;
+  const local = rows.filter(r => r.src && r.src.includes('tauri.localhost')).length;
+  J(`imgdiag settled total=${imgs.length} ok=${ok} 指向本站=${local}`);
+  const bad = rows.filter(r => !r.ok).slice(0, 3).map(r => r.src.slice(0, 70));
+  if (bad.length) J('imgdiag 未出图样本: ' + bad.join(' , '));
+}
+async function flushDwell(){
+  if (!curDetail) return;
+  const ms = Date.now() - dwellStart;
+  if (ms < 1000) return;
+  const rd = document.getElementById('rd');
+  let depth = 0;
+  if (rd){ const r = rd.getBoundingClientRect();
+    depth = Math.min(1, Math.max(0, (r.bottom - r.top) ? (innerHeight - Math.max(0, r.top)) / (r.bottom - r.top) : 0)); }
+  try{ await call('log_event', { kind:'dwell', repoId:curDetail.id, payload: JSON.stringify({ ms, readDepth:+depth.toFixed(2) }) }); }catch(e){}
+  J(`dwell ${curDetail.id} ${ms}ms depth=${depth.toFixed(2)}`);
+  dwellStart = Date.now();
+}
+async function back(){
+  clearInterval(dwellT); await flushDwell(); dwellT = 0; curDetail = null;
+  document.getElementById('tabs').style.display = '';
+  shown = 0; document.getElementById('body').innerHTML=''; CH = detailFrom; tabs(); load();
+}
+// ---------- 账号与设备码登录
+async function renderAccounts(){
+  const el = document.getElementById('accts'); if (!el) return;
+  try{
+    const list = await call('accounts_list', {});
+    const active = (await call('settings_json', {})).active_login || '';
+    if (!list.length) { el.innerHTML = '<span class="tag">当前没有登录任何账号 —— 全部功能仍可用，只是走匿名配额（60 次/小时）且没有你的画像</span>'; return; }
+    el.innerHTML = list.map(a => `<span class="tag ${a.login===active?'p':''}">
+      ${a.login===active?'●':'○'} ${esc(a.login)} · ${a.mode==='pat'?'PAT':'OAuth'} · ${a.scopes||'scope 未知'}
+      ${a.login===active?'':`<a href="#" onclick="activate('${esc(a.login)}');return false">切换</a>`}
+      ${list.length>1?`<a href="#" onclick="del('${esc(a.login)}');return false">删除</a>`:''}</span>`).join(' ');
+  }catch(e){ el.textContent='读不到账号：'+e; }
+}
+async function activate(login){ await call('account_activate',{login}); J('activate '+login); renderAccounts(); }
+async function del(login){ await call('account_remove',{login}); J('remove '+login); renderAccounts(); }
+
+let DEV = null, pollTimer = 0;
+async function loginDev(btn){
+  const cid = (SET.client_id||'').trim();
+  const st = document.getElementById('devst');
+  if (!cid) { st.textContent='先填 client_id'; return; }
+  btn.disabled = true; st.textContent='申请设备码…';
+  try{
+    const v = await call('login_start', { clientId: cid, scopes: SET.scopes || 'read:user public_repo' });
+    DEV = { code: v.device_code, interval: v.interval || 5, deadline: Date.now() + (v.expires_in||900)*1000 };
+    st.textContent='';
+    document.getElementById('devbox').innerHTML = `<div class="panel">
+      <div class="ds">在浏览器里打开 <a href="${esc(v.verification_uri)}" target="_blank" rel="noreferrer">${esc(v.verification_uri)}</a>
+        （或 ${esc(v.verification_uri_complete||'')}），输入这个一次性代码：</div>
+      <div style="font-size:26px;letter-spacing:3px;font-weight:700;margin:8px 0">${esc(v.user_code)}</div>
+      <div class="sub">代码 ${Math.round((v.expires_in||900)/60)} 分钟内有效 · 授权后本窗口会自动继续 · <span id="pollst">等待授权…</span></div>
+      <button class="more" onclick="copyCode('${esc(v.user_code)}')">复制代码</button>
+      <button class="more" onclick="stopPoll()">取消</button></div>`;
+    J('device_start ok interval=' + DEV.interval);
+    poll();
+  }catch(e){ st.textContent='失败：' + e; J('device_start FAIL '+e); }
+  btn.disabled = false;
+}
+function copyCode(t){ try{ navigator.clipboard.writeText(t); }catch(e){} }
+function stopPoll(){ if(pollTimer) clearTimeout(pollTimer); pollTimer=0; const p=document.getElementById('pollst'); if(p) p.textContent='已取消'; DEV=null; }
+async function poll(){
+  if (!DEV) return;
+  const p = document.getElementById('pollst');
+  if (Date.now() > DEV.deadline) { if(p) p.textContent='代码已过期，重新点开始登录'; stopPoll(); return; }
+  let r;
+  try{ r = await call('login_poll', { clientId:(SET.client_id||'').trim(), deviceCode: DEV.code }); }
+  catch(e){ if(p) p.textContent='轮询出错：'+e; DEV=null; return; }
+  if (r.state === 'pending') { if(p) p.textContent='还在等你在浏览器里授权…'; pollTimer = setTimeout(poll, DEV.interval*1000); return; }
+  if (r.state === 'slow_down') { DEV.interval += 5; pollTimer = setTimeout(poll, DEV.interval*1000); return; }
+  if (r.state !== 'ok') { if(p) p.textContent='登录未完成：' + (r.state||r.error||'?'); stopPoll(); return; }
+  stopPoll();
+  if(p) p.textContent='已登录 @' + r.login;
+  document.getElementById('meta').innerHTML = '登录成功：<b>@'+esc(r.login)+'</b>。现在点"建我的画像"，推荐就会按你的口味重算。';
+  J('login ok '+r.login);
+  SET.has_token = true; renderAccounts();
+}
+
+async function saveTok(btn){
+  const el = document.getElementById('tok');
+  btn.disabled = true; btn.textContent = '验证中…';
+  const meta = document.getElementById('meta');
+  try{
+    const val = el.value;
+    if (!val.trim()){
+      await call('set_token_cmd', { token: '' });
+      SET.has_token = false;
+      meta.textContent = '输入框已清空。要真正移除凭据，请在上方账号列表里点"删除"。';
+      renderAccounts();
+    } else {
+      const r = await call('add_pat', { token: val });
+      if (r.error) { meta.textContent = 'token 验证失败：' + r.error + '（界面仍可用匿名额度）'; }
+      else {
+        SET.has_token = true; el.value = ''; el.placeholder = 'ghp_…（已存）';
+        meta.innerHTML = '已验证 <b>@' + esc(r.login) + '</b>，认证态配额 <b>' + (r.quota_limit ?? '?') +
+          '</b> 次/小时（剩余 ' + (r.quota_remaining ?? '?') + '）—— 现在可以点"建我的画像"';
+        J('pat ok login=' + r.login);
+        renderAccounts();
+      }
+    }
+  }catch(e){ meta.textContent = '保存失败：' + e; J('token FAIL ' + e); }
+  btn.disabled = false; btn.textContent = '保存并验证';
+}
+async function mine(btn){
+  btn.disabled=true; btn.textContent='建画像中…（读收藏 + 检索 + 补测曲线，约 1 分钟）';
+  try{
+    const m=await call('build_my_profile',{pages:5});
+    document.getElementById('meta').innerHTML='画像已按<b>你自己的账号</b>重建：<br>'+esc(m).split('\n').filter(Boolean).map(x=>'· '+x).join('<br>');
+    J('mine ok'); shown=0; document.getElementById('body').innerHTML=''; CH='profile'; tabs(); load();
+  }catch(e){ document.getElementById('meta').textContent='建画像失败：'+e; J('mine FAIL '+e); }
+  btn.disabled=false; btn.textContent='建我的画像';
+}
+async function inApp(id,url){
+  try{ const m = await call('open_in_app_window', { url, repoId:id });
+       document.getElementById('meta').textContent = m; J('webview '+m); }
+  catch(e){ J('webview FAIL '+e); document.getElementById('meta').textContent='内嵌窗口打不开：'+e; }
+}
+async function ext(btn,kind,id,text){
+  try{ await call('log_event',{kind,repoId:id,payload:text}); }catch(e){}
+  if(kind==='open_in_browser'){ window.open(text,'_blank'); btn.textContent='已打开'; }
+  else { try{ await navigator.clipboard.writeText(text); btn.textContent='已复制'; }catch(_){ btn.textContent='复制失败'; } }
+}
+function hideMenu(ev,id,btn){
+  const m=document.getElementById('menu');
+  const R=[['too_old','太老 / 不活跃'],['wrong_lang','不是我要的语言'],['promo','看着像营销号'],['known','我已经知道了']];
+  m.innerHTML=R.map(r=>`<div onclick="doHide(${id},this,'${r[0]}','${r[1]}')">${r[1]}</div>`).join('');
+  const b=btn.getBoundingClientRect();
+  m.style.left=(b.left+scrollX)+'px'; m.style.top=(b.bottom+scrollY+4)+'px'; m.style.display='block';
+  setTimeout(()=>addEventListener('click',closeMenu,{once:true}),0);
+}
+function closeMenu(){ document.getElementById('menu').style.display='none'; }
+async function doHide(id,el,reason,label){
+  closeMenu();
+  try{ await call('log_event',{kind:'hide',repoId:id,payload:reason}); }catch(e){ J('hide FAIL '+e); }
+  el.closest('.card').remove(); stats();
+  document.getElementById('meta').textContent=`已记为不感兴趣（${label}）—— 它不会再出现在任何榜上`;
+}
+async function refresh(btn){
+  const t0 = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent='采集中…'; }
+  try{ await call('run_collect',{pages:1,curveN:12}); await call('do_explore',{perLang:2});
+       shown=0; document.getElementById('body').innerHTML=''; load(); }
+  catch(e){ J('refresh FAIL '+e); if(btn){btn.textContent='失败';btn.disabled=false;return;} }
+  if(btn){ btn.textContent=t0; btn.disabled=false; }
+}
+async function calib(btn){
+  btn.disabled=true;
+  try{ const m=await call('calibrate_now',{}); document.getElementById('meta').textContent=m;
+       J('calibrate '+m); shown=0; document.getElementById('body').innerHTML=''; load(); }
+  catch(e){ J('calibrate FAIL '+e); }
+  btn.disabled=false;
+}
+async function doSearch(){
+  const el=document.getElementById('q'), q=el.value.trim(); if(!q) return;
+  const meta=document.getElementById('meta'); meta.textContent='搜索中…';
+  try{
+    const m=await call('do_search',{query:q}); J('search '+m);
+    CH='all'; shown=0; document.getElementById('body').innerHTML='';
+    meta.innerHTML='搜索「'+esc(q)+'」—— 这个词已进兴趣画像，下一轮抓取会找更多这类项目';
+    load();
+  }catch(e){ meta.textContent='搜索失败：'+e; J('search FAIL '+e); }
+}
+
+async function stats(){
+  try{
+    const s=await call('get_stats',{});
+    document.getElementById('meta').innerHTML =
+      `候选池 <b>${s.pool}</b> · 有增速 <b>${s.ranked}</b> · 画像 <b>@${esc(s.login||'未建')}</b> · ` +
+      `曝光 <b>${s.impressions}</b>（触达 ${s.reach}/${s.sessions} 会话）· 点开 <b>${s.opens}</b> · ` +
+      `收藏 <b>${s.saved}</b> · 不感兴趣 <b>${s.hides}</b> · ` +
+      `<a href="#" onclick="refresh(this);return false">刷新数据</a> · ` +
+      `<a href="#" onclick="calib(this);return false">重新校准</a>`;
+    window.__S = s; dbg(`db=${s.db}`); return s;
+  }catch(e){ document.getElementById('meta').textContent='统计不可用'; }
+}
+async function statsView(){
+  const s = window.__S || await stats(); const box=document.getElementById('body'); box.dataset.v='stats';
+  if(!s){ box.innerHTML='<div class="empty">读不到统计</div>'; return; }
+  const ctr = (s.opens/Math.max(s.impressions,1)*100).toFixed(1);
+  box.innerHTML=`<div class="grid">
+    <div class="panel"><h2 class="nm">你自己的使用数据</h2>
+      <p class="ds">曝光 <b>${s.impressions}</b> 次，触达 <b>${s.reach}</b> 个不同项目，跨会话重复展示已被去重。<br>
+      点开率 <b>${ctr}%</b>，收藏 <b>${s.saved}</b> 个，标记不感兴趣 <b>${s.hides}</b> 个。<br>
+      校准需要每个桶至少 20 条曝光，现在${s.impressions>=100?'可能已经够了':'还不够，所以排序仍用的是默认权重'}。</p></div>
+    <div class="panel"><h2 class="nm">数据在哪</h2>
+      <p class="ds">全部在本机 <code>${esc(s.db)}</code>，没有任何一条离开这台机器。<br>
+      唯一的例外是翻译：开启后，被翻译的简介会发给翻译服务。</p></div>
+  </div>`;
+}
+function settingsView(){
+  const box=document.getElementById('body'); box.dataset.v='set';
+  const seg=(k,opts)=>`<div class="seg">${opts.map(o=>
+    `<button class="${SET[k]===o[0]?'on':''}" onclick="set('${k}','${o[0]}')">${o[1]}</button>`).join('')}</div>`;
+  box.innerHTML=`<div style="max-width:660px">
+    <h3>外观</h3>
+    <div class="set"><div>配色<small>浅色为默认；深色只是同一套变量的一层覆盖。</small></div>
+      ${seg('theme',[['light','白'],['dark','黑'],['system','跟随系统']])}</div>
+    <div class="set"><div>界面语言<small>影响翻译目标语言。</small></div>
+      ${seg('lang',[['zh-CN','简体中文'],['en','English']])}</div>
+
+    <h3>账号</h3>
+    <div id="accts" class="sub" style="margin:0 0 10px">读取账号列表…</div>
+    <div class="set"><div><b>① 粘贴 token 登录（推荐，约 30 秒）</b><small>到 <code>github.com/settings/tokens</code> 建一个 classic token，
+      只勾 <code>read:user</code> 和 <code>public_repo</code>（不要勾 repo，就不碰你的私有代码），复制粘贴进来。
+      token 存本机单独文件 <code>accounts.json</code>，<b>不进数据库</b>。配额立刻从匿名 60 次/小时变成 5000 次/小时，
+      之后点"用我自己的口味建画像"，推荐就按你的真实口味重算。</small></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="url" id="tok" type="password" placeholder="ghp_…" style="width:200px">
+        <button class="more" onclick="saveTok(this)">保存并验证</button></div></div>
+
+    <details style="margin-top:10px"><summary class="sub" style="cursor:pointer;padding:4px 0">
+      ② 设备码登录 —— 只在<b>要发布给别人用</b>时才需要（需先注册 OAuth App 并打开 Device Flow）</summary>
+      <div class="set"><div>开始登录<small>不需要回调地址、不把密钥打进应用里。点后会显示一次性代码，
+        你在浏览器里输到 github.com/login/device 授权即可，本窗口自动继续。</small></div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button class="more" onclick="loginDev(this)">开始登录</button>
+          <span id="devst" class="tag"></span></div></div>
+      <div id="devbox"></div>
+      <div class="set"><div>OAuth App client_id<small>填一次即可，存本机设置表。</small></div>
+        <input class="url" value="${esc(SET.client_id||'')}" placeholder="Iv1.xxxx 或 40 位十六进制" onchange="set('client_id',this.value)"></div>
+    </details>
+
+    <div class="set"><div>用我自己的口味建画像<small>读你的收藏和你自己的仓库，算出兴趣词表，再按词表去抓取，
+      并对粗排后的候选补测增速曲线。这一步把"画像"通道从借来的测试账号换成你本人。</small></div>
+      <button class="more" onclick="mine(this)">建我的画像</button></div>
+
+    <h3>网络</h3>
+    <div class="set"><div>HTTP 代理<small>留空=直连。实测这台机器上 <code>api.github.com</code> 可直连，
+      但 <code>github.com</code>（设备码登录端点、部分徽章图）直连会被重置，必须走代理；企业网络同理。
+      格式如 <code>http://127.0.0.1:7890</code>。<b>改完要重启应用才生效</b>——连接池在进程启动时建好。</small></div>
+      <input class="url" value="${esc(SET.proxy_url||'')}" placeholder="留空即直连" onchange="set('proxy_url',this.value)"></div>
+
+    <h3>翻译</h3>
+    <div class="set"><div>翻译项目简介<small>项目名是专有名词，不翻译，只翻简介。
+      <b>开启后简介会发送给第三方翻译服务</b>——这是本应用唯一会把内容送出本机的功能，默认关闭。</small></div>
+      ${seg('translate_on',[['0','关闭'],['1','开启']])}</div>
+    <div class="set"><div>翻译端点<small>当前用 MyMemory（免密钥、按字符限额）。已翻过的内容会存进本地
+      <code>translation</code> 表，同一段话不会重复请求。</small></div>
+      <input class="url" value="${esc(SET.translate_url||'')}" onchange="set('translate_url',this.value)"></div>
+
+    <h3>数据</h3>
+    <div class="set"><div>采集<small>热度榜 + 探索新生池，一次跑完约 60~90 次请求。</small></div>
+      <button class="more" onclick="refresh(this)">立即采集</button></div>
+    <div class="set"><div>校准<small>按通道/窗口/语言/降权分桶统计命中率，样本不足 20 的桶不生效。</small></div>
+      <button class="more" onclick="calib(this)">重新校准</button></div>
+    <div class="set"><div>数据库<small>${esc((window.__S&&window.__S.db)||'')}</small></div>
+      <button class="more" onclick="load()">重新读取</button></div>
+  </div>`;
+  renderAccounts();
+}
+
+(async function boot(){
+  try{ if (T) SET = Object.assign(SET, await call('settings_json', {})); }catch(e){ J('settings FAIL '+e); }
+  applyTheme(); tabs(); load();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (SET.theme==='system') applyTheme(); });
+})();
+</script>
+</body>
+</html>

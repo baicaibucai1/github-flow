@@ -1,0 +1,1 @@
+SELECT database(), count() FROM gh.events WHERE event_type='WatchEvent' AND event_time > now() - INTERVAL 1 DAY FORMAT TSV

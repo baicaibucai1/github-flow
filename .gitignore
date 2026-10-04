@@ -1,0 +1,21 @@
+# 构建产物：3.5G，绝不能进仓库
+src-tauri/target/
+src-tauri/gen/
+
+# WebView2 探针的重型部分：解包出来的 dll、浏览器 profile（含 cookie）、NuGet 包
+tools/x/
+tools/udf/
+tools/*.zip
+tools/*.dll
+tools/*.log
+
+# 本机数据与凭据：数据库、token、账号表、界面日志
+*.db
+cred.bin
+accounts.json
+ui.log
+.pat*
+.env
+.tauri-key*
+node_modules/
+dist/*.feed.json

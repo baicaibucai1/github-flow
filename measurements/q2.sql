@@ -1,0 +1,1 @@
+SELECT database,name FROM system.tables WHERE database='gh' LIMIT 30 FORMAT TSV

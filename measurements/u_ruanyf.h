@@ -1,0 +1,28 @@
+HTTP/1.1 200 OK
+Date: Fri, 02 Oct 2026 07:51:12 GMT
+Content-Type: application/json; charset=utf-8
+Cache-Control: public, max-age=60, s-maxage=60
+Vary: Accept,Accept-Encoding, Accept, X-Requested-With
+ETag: W/"54527c2c7c30ada8ef7b05322aaf97903e2ac1bc88209bfa453badc6c3868289"
+X-GitHub-Media-Type: github.v3; format=json
+Link: <https://api.github.com/user/905434/starred?per_page=1&page=2>; rel="next", <https://api.github.com/user/905434/starred?per_page=1&page=236>; rel="last"
+x-github-api-version-selected: 2022-11-28
+Access-Control-Expose-Headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+Access-Control-Allow-Origin: *
+Strict-Transport-Security: max-age=31536000; includeSubdomains; preload
+X-Frame-Options: deny
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Referrer-Policy: origin-when-cross-origin, strict-origin-when-cross-origin
+Content-Security-Policy: default-src 'none'
+Server: github.com
+Accept-Ranges: bytes
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 38
+X-RateLimit-Used: 22
+X-RateLimit-Resource: core
+X-RateLimit-Reset: 1790928920
+Content-Length: 6450
+X-GitHub-Request-Id: 64B9:347AAF:664976:6C66F2:6ABF6270
+x-github-edge-region: southeastasia
+
