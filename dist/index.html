@@ -97,6 +97,50 @@
    padding:4px 8px;font-size:12px;width:300px;font-family:ui-monospace,Consospace,monospace}
  .dbg{color:var(--dim);font-size:11px;margin-top:16px;word-break:break-all;opacity:.7}
  code{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+
+ /* 顶部信息条：这个产品是被配额驱动的，"上次什么时候采的"必须一眼可见 */
+ .strip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel);
+   border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:var(--dim)}
+ .strip b{color:var(--txt)}
+ .strip .grow{flex:1}
+ .strip .btn{border:1px solid var(--line);background:var(--bg);color:var(--txt);border-radius:6px;
+   padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+ .strip .btn:hover{background:var(--panel2)}
+ .strip .warn{color:var(--warn)}
+
+ /* 首条大卡：一屏里必须有一个视觉落点，否则 40 张同构卡片就是墙 */
+ .hero{padding:18px 20px}
+ .hero .nm{font-size:19px}
+ .hero .ds{font-size:14.5px;margin-top:9px}
+ .hero .st{font-size:13px}
+ .hero .spark rect{fill:var(--good)}
+ .hero .big{font-size:15px;font-weight:650;color:var(--txt)}
+
+ .seen{color:var(--dim);font-size:11px}
+ .sk{height:132px;border-radius:12px;margin-bottom:14px;
+   background:linear-gradient(90deg,var(--panel) 25%,var(--panel2) 37%,var(--panel) 63%);
+   background-size:400% 100%;animation:sk 1.2s ease infinite}
+ @keyframes sk{0%{background-position:100% 0}100%{background-position:0 0}}
+
+ /* README 是 GitHub 渲染的 HTML，不带我们的样式；不补这一段它会像裸文本 */
+ .md{font-size:14px;line-height:1.7;color:var(--txt)}
+ .md h1,.md h2,.md h3,.md h4{margin:18px 0 8px;line-height:1.3;font-weight:650}
+ .md h1{font-size:19px;border-bottom:1px solid var(--line);padding-bottom:5px}
+ .md h2{font-size:17px;border-bottom:1px solid var(--line);padding-bottom:4px}
+ .md h3{font-size:15px}
+ .md p{margin:9px 0}
+ .md ul,.md ol{margin:9px 0;padding-left:24px}
+ .md li{margin:3px 0}
+ .md img{max-width:100%;height:auto;border-radius:6px}
+ .md a{color:var(--acc)}
+ .md code{background:var(--panel2);padding:1px 5px;border-radius:5px}
+ .md pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto}
+ .md pre code{background:none;padding:0}
+ .md blockquote{margin:10px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--dim)}
+ .md table{border-collapse:collapse;margin:10px 0;font-size:13px;width:100%}
+ .md th,.md td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+ .md th{background:var(--panel2)}
+ .md hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 </style>
 </head>
 <body>
@@ -121,6 +165,7 @@
       </div>
       <div class="tabs" id="tabs"></div>
     </div>
+    <div class="strip" id="strip">读取中…</div>
     <div class="meta" id="meta">加载中…</div>
     <div id="body"></div>
     <div class="dbg" id="dbg" style="display:none"></div>
@@ -155,8 +200,43 @@ async function set(k, v){
 function toggleDbg(){ dbgOn = !dbgOn; document.getElementById('dbg').style.display = dbgOn ? '' : 'none'; }
 function dbg(t){ const d=document.getElementById('dbg'); if(d&&dbgOn) d.textContent='[dbg] '+t; }
 
-function tabs(){ document.getElementById('tabs').innerHTML = TABS.map(t =>
-  `<button class="${t[0]===CH?'on':''}" onclick="tab('${t[0]}')">${t[1]}</button>`).join(''); }
+function tabs(){
+  const C = window.__C || {};
+  document.getElementById('tabs').innerHTML = TABS.map(t => {
+    const n = C[t[0]] ?? 0;
+    return `<button class="${t[0]===CH?'on':''}" onclick="tab('${t[0]}')">${t[1]}<span class="n">${n}</span></button>`;
+  }).join('');
+}
+
+function ago(ts){
+  if (!ts) return '从未';
+  const m = Math.round((Date.now()/1000 - ts) / 60);
+  if (m < 1) return '刚刚';
+  if (m < 60) return m + ' 分钟前';
+  if (m < 1440) return Math.round(m/60) + ' 小时前';
+  return Math.round(m/1440) + ' 天前';
+}
+
+async function counts(){
+  try { window.__C = await call('get_counts', {}); tabs(); renderStrip(); }
+  catch(e){ J('counts FAIL ' + e); }
+}
+
+function renderStrip(){
+  const el = document.getElementById('strip'); if (!el) return;
+  const C = window.__C || {}, S = window.__S || {};
+  const stale = !C.last_collect || (Date.now()/1000 - C.last_collect) > 6*3600;
+  el.innerHTML =
+    '上次采集 <b>' + ago(C.last_collect) + '</b>' +
+    (stale ? ' <span class="warn">· 数据已过期，热度榜会重复</span>' : '') +
+    ' · 候选池 <b>' + (C.all ?? '—') + '</b>' +
+    ' · 已测增速 <b>' + (C.hot ?? '—') + '</b> 热度 / <b>' + (C.profile ?? 0) + '</b> 画像 / <b>' + (C.explore ?? 0) + '</b> 探索' +
+    ' · 收藏 <b>' + (C.saved ?? 0) + '</b>' +
+    (S.login ? ' · <b>@' + esc(S.login) + '</b>' : ' · <span class="warn">未登录（匿名 60 次/小时）</span>') +
+    '<span class="grow"></span>' +
+    '<button class="btn" onclick="refresh(this)">采集新数据</button>' +
+    '<button class="btn" onclick="mine(this)">按我的口味重建画像</button>';
+}
 function tab(c){ CH=c; shown=0; document.getElementById('body').innerHTML=''; tabs(); load(); }
 function view(v, btn){
   shown = 0; document.getElementById('body').innerHTML='';
@@ -178,11 +258,13 @@ function card(c, i){
   const why=(c.why||[]).map(t=>{const cls=/降权|不成比例/.test(t)?'neg':(/不足|尚未/.test(t)?'na':'');
     return `<i class="${cls}">${esc(t)}</i>`}).join('');
   const chan=c.channel==='profile'?'<span class="tag p">画像</span>':c.window==='explore'?'<span class="tag e">探索</span>':'';
-  return `<article class="card" data-id="${c.id}" data-slot="${i}" data-chan="${esc(c.channel)}" data-desc="${esc(c.description||'')}">
+  const hero = i === 0 ? ' hero' : '';
+  return `<article class="card${hero}" data-id="${c.id}" data-slot="${i}" data-chan="${esc(c.channel)}" data-desc="${esc(c.description||'')}">
     <div class="like">${c.saved?'★ 已收藏':''}</div>
     <h2 class="nm"><a href="#" onclick="openRepo(this,${c.id},'${esc(c.url)}');return false">${esc(c.full_name)}</a></h2>
     <div class="ln">${chan}<span class="tag">出生 ${c.age_days} 天</span>
-      <span class="tag">score ${c.score.toFixed(3)}</span>
+      ${dbgOn ? `<span class="tag">score ${c.score.toFixed(3)}</span>` : ''}
+      ${c.seen ? '<span class="seen">看过了</span>' : '<span class="tag p">未看过</span>'}
       ${c.spam?'<span class="tag spam">降权</span>':''}${c.slope==null?'<span class="tag warn">斜率未知</span>':''}</div>
     <p class="ds">${esc(c.description)||'<span class="tag">（无简介）</span>'}</p>
     <div class="chips">${(c.topics||[]).slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div>
@@ -245,6 +327,8 @@ function observe(){
 
 async function load(){
   const box=document.getElementById('body');
+  if (!shown) box.innerHTML = '<div class="grid"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>';
+  counts();
   try{
     const list = T ? await call('get_channel',{channel:CH,limit:LIMIT,offset:shown}) : [];
     if(!list.length && shown===0){
@@ -323,7 +407,7 @@ async function detail(id){
       ${rel?`<div class="panel"><h3 style="margin:0 0 6px">最近 release</h3><ul class="ds" style="margin:0;padding-left:18px">${rel}</ul></div>`
            :`<div class="panel"><h3 style="margin:0 0 6px">最近 release</h3><div class="ds">没有 release，或取不到</div></div>`}
       <div class="panel"><h3 style="margin:0 0 6px">README</h3>
-        <div class="ds" id="rd">${sanitize(d.readme_html)||'<i>取不到 README</i>'}</div></div>
+        <div class="md" id="rd">${sanitize(d.readme_html)||'<i>取不到 README</i>'}</div></div>
     </div>
   </div>`;
   if (SET.translate_on === '1') translateVisible();

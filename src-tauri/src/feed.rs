@@ -111,6 +111,7 @@ pub struct Card {
   pub channel: String,
   pub lang_hit: bool,
   pub saved: bool,
+  pub seen: bool,
   pub weeks: Vec<i64>,
   pub why: Vec<String>,
 }
@@ -201,6 +202,14 @@ pub fn db_path() -> String {
   let dir = std::env::var("LOCALAPPDATA").or_else(|_| std::env::var("APPDATA")).unwrap_or_else(|_| ".".into());
   format!("{dir}\\gh-feed\\gh-feed.db")
 }
+
+/// 数据目录的唯一来源：界面日志以前在 main.rs 里各写一遍，改名字时就漏了一处
+pub fn data_dir() -> String {
+  let dir = std::env::var("LOCALAPPDATA").or_else(|_| std::env::var("APPDATA")).unwrap_or_else(|_| ".".into());
+  format!("{dir}\\gh-feed")
+}
+
+pub fn log_path() -> String { format!("{}\\ui.log", data_dir()) }
 
 fn init_db(conn: &Connection) {
   conn
@@ -464,6 +473,7 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
         channel: "hot".into(),
         lang_hit: false,
         saved: false,
+        seen: false,
         weeks: Vec::new(),
         why,
       })
@@ -541,7 +551,12 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
       st.query_map([], |r| r.get::<_, i64>(0)).map(|x| x.filter_map(|y| y.ok()).collect()).unwrap_or_default()
     } else { Vec::new() };
     let set: std::collections::HashSet<i64> = ids.into_iter().collect();
-    for c in cards.iter_mut() { c.saved = set.contains(&c.id); }
+    let seen: std::collections::HashSet<i64> = if let Ok(mut st2) = conn.prepare("SELECT DISTINCT repo_id FROM impression") {
+      st2.query_map([], |r| r.get::<_, i64>(0))
+        .map(|x| x.filter_map(|y| y.ok()).collect())
+        .unwrap_or_default()
+    } else { Default::default() };
+    for c in cards.iter_mut() { c.saved = set.contains(&c.id); c.seen = seen.contains(&c.id); }
   }
   cards.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
   // 打散：同一 owner 不连续出现两次
@@ -1597,4 +1612,19 @@ pub fn accounts_json() -> serde_json::Value {
     "login": a.login, "user_id": a.user_id, "mode": a.auth_mode, "scopes": a.scopes,
     "added_at": a.added_at, "token_len": a.token.len()
   })).collect::<Vec<_>>())
+}
+
+/// 各通道现在各有多少可看的东西。界面顶部的频道标签要用它，
+/// 否则用户点进"探索"才知道是空的 —— 那是浪费他一次点击。
+pub fn channel_counts(conn: &Connection) -> serde_json::Value {
+  ensure_event_tables(conn);
+  let q = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0) };
+  serde_json::json!({
+    "all": q("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL"),
+    "hot": q("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL AND window_kind LIKE 'born%'"),
+    "profile": q("SELECT COUNT(1) FROM feed_hit WHERE channel='profile'"),
+    "explore": q("SELECT COUNT(1) FROM repo WHERE window_kind='explore'"),
+    "saved": q("SELECT COUNT(1) FROM saved"),
+    "last_collect": conn.query_row("SELECT MAX(ran_at) FROM query_log", [], |r| r.get::<_, Option<i64>>(0)).ok().flatten().unwrap_or(0)
+  })
 }

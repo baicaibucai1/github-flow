@@ -78,8 +78,8 @@ fn get_stats() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn js_log(msg: String) -> Result<(), String> {
   use std::io::Write;
-  let dir = std::env::var("LOCALAPPDATA").map_err(|e| e.to_string())?;
-  let path = format!("{dir}\\ghfind\\ui.log");
+  let path = feed::log_path();
+  if let Some(p) = std::path::Path::new(&path).parent() { std::fs::create_dir_all(p).ok(); }
   let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
   writeln!(f, "{msg}").map_err(|e| e.to_string())
 }
@@ -187,13 +187,19 @@ fn account_remove(login: String) -> Result<(), String> { feed::remove_account(&l
 #[tauri::command]
 fn add_pat(token: String) -> Result<serde_json::Value, String> { feed::add_pat_account(&token) }
 
+#[tauri::command]
+fn get_counts() -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  Ok(feed::channel_counts(&c))
+}
+
 fn main() {
   tauri::Builder::default()
     // 自动更新。没有这两个插件注册，前端调 check() 会报
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, set_token_cmd, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, set_token_cmd, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }
