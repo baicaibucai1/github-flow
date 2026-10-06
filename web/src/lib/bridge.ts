@@ -128,6 +128,30 @@ export type AuthStatus = {
   hint?: string;
 };
 
+/** "我的"这一页：全部本机数据，由 me_report 一次读回 */
+export type MeReport = {
+  login: string;
+  terms: { term: string; weight: number }[];
+  langs: { language: string; weight: number }[];
+  min_n: number;
+  profile_hits: number;
+  starred_snapshot: number;
+  saved: number;
+  hides: number;
+  kinds: [string, number][];
+  hide_reasons: [string, number][];
+  buckets: {
+    feat: string;
+    bucket: string;
+    n: number;
+    n_pos: number;
+    w: number;
+    live: boolean;
+    ctr: number;
+  }[];
+  fitted_at: number;
+};
+
 /** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */
 export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);

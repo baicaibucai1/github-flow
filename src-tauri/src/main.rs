@@ -200,9 +200,15 @@ fn account_remove(login: String) -> Result<(), String> { feed::remove_account(&l
 #[tauri::command]
 fn add_pat(token: String) -> Result<serde_json::Value, String> { feed::add_pat_account(&token) }
 
+/// "我的"这一页的数据：本地读，不发任何请求
 #[tauri::command]
-fn get_counts() -> Result<serde_json::Value, String> {
+fn me_report() -> Result<serde_json::Value, String> {
   let c = feed::open_db()?;
+  Ok(feed::me_report(&c))
+}
+
+#[tauri::command]
+fn get_counts() -> Result<serde_json::Value, String> {  let c = feed::open_db()?;
   Ok(feed::channel_counts(&c))
 }
 
@@ -212,7 +218,7 @@ fn main() {
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

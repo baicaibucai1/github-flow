@@ -46,7 +46,7 @@ GitHub 没有 trending 接口，官方页面的排序也是黑盒。所以这里
 ```
 web/                 界面：React 19 + Vite + Tailwind v4
   src/App.tsx        三栏工作台外壳（Soda 的 FileManagerPage）
-  src/views/         FeedView / DetailView / StatsView / SettingsView
+  src/views/         FeedView（信息流）/ DetailView（详情）/ MeView（我的）/ StatsView / SettingsView
   src/lib/bridge.ts  与 Rust 命令的类型契约；界面不碰 SQL
 soda/                Soda UI 源码：ui（组件箱）+ patterns（页面骨架）+ theme（token 真源）
 package.json         pnpm workspace 根（web + soda/*）

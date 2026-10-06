@@ -995,6 +995,97 @@ fn weights(conn: &Connection) -> std::collections::HashMap<String, f64> {
   m
 }
 
+/// "我的"这一页要的东西：它以为你喜欢什么、你做过什么、哪些桶已经敢动排序。
+/// 全部本地读，一个请求都不发（身份与配额由 auth_status 单独给）。
+pub fn me_report(conn: &Connection) -> serde_json::Value {
+  ensure_profile_tables(conn);
+  ensure_event_tables(conn);
+  let login = active_login(conn);
+
+  // 两个分支的 query_map 闭包类型不同，不能塞进一个 if 里，所以这里只留"按 login 取"的一种
+  let pairs = |sql: &str| -> Vec<(String, f64)> {
+    let mut out = Vec::new();
+    if let Ok(mut st) = conn.prepare(sql) {
+      if let Ok(rows) = st.query_map(params![&login], |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?))) {
+        out = rows.flatten().collect();
+      }
+    }
+    out
+  };
+  let counts = |sql: &str| -> Vec<(String, i64)> {
+    let mut out = Vec::new();
+    if let Ok(mut st) = conn.prepare(sql) {
+      if let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))) {
+        out = rows.flatten().collect();
+      }
+    }
+    out
+  };
+  let one = |sql: &str| -> i64 {
+    conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0)
+  };
+
+  let terms = if login.is_empty() { Vec::new() } else {
+    pairs("SELECT term, weight FROM profile_term WHERE login=?1 ORDER BY weight DESC, term LIMIT 16")
+  };
+  let langs = if login.is_empty() { Vec::new() } else {
+    pairs("SELECT language, weight FROM profile_language WHERE login=?1 ORDER BY weight DESC LIMIT 8")
+  };
+  let objs = |v: &Vec<(String, f64)>, k: &str| -> Vec<serde_json::Value> {
+    v.iter()
+      .map(|(name, w)| serde_json::json!({ k: name, "weight": (w * 1000.0).round() / 1000.0 }))
+      .collect()
+  };
+
+  // 分桶表：n 与是否够到 MIN_N。样本不足的桶权重恒为 1.0，必须让界面标出来，
+  // 否则看的人会以为排序已经被自己这几条数据改写了（手册 7.3）。
+  let mut buckets: Vec<serde_json::Value> = Vec::new();
+  if let Ok(mut st) = conn.prepare(
+    "SELECT f.feat, f.bucket, f.n, f.n_pos, COALESCE(m.w, 1.0) \
+     FROM feature_stat f LEFT JOIN model_weight m ON m.feat=f.feat AND m.bucket=f.bucket \
+     ORDER BY f.feat, f.n DESC",
+  ) {
+    if let Ok(rows) = st.query_map([], |r| {
+      Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?,
+          r.get::<_, i64>(3)?, r.get::<_, f64>(4)?))
+    }) {
+      for (feat, bucket, n, pos, w) in rows.flatten() {
+        buckets.push(serde_json::json!({
+          "feat": feat, "bucket": bucket, "n": n, "n_pos": pos,
+          "w": (w * 100.0).round() / 100.0, "live": n >= MIN_N,
+          "ctr": if n > 0 { (pos as f64 * 1000.0 / n as f64).round() / 10.0 } else { 0.0 },
+        }));
+      }
+    }
+  }
+
+  // 画像候选必须按 login 数：不这么写的话，刚登录的人词表明明是空的，
+  // 页面上却显示着上一个账号留下的 297 个候选——自相矛盾，而且看不出来是谁的。
+  let hits = if login.is_empty() { 0 } else {
+    conn.query_row("SELECT COUNT(1) FROM feed_hit WHERE channel='profile' AND login=?1",
+      params![&login], |r| r.get::<_, i64>(0)).unwrap_or(0)
+  };
+  let snapshot = if login.is_empty() { 0 } else {
+    conn.query_row("SELECT COUNT(1) FROM starred_snapshot WHERE login=?1", params![&login],
+      |r| r.get::<_, i64>(0)).unwrap_or(0)
+  };
+
+  serde_json::json!({
+    "login": login,
+    "terms": objs(&terms, "term"),
+    "langs": objs(&langs, "language"),
+    "min_n": MIN_N,
+    "profile_hits": hits,
+    "starred_snapshot": snapshot,
+    "saved": one("SELECT COUNT(1) FROM saved"),
+    "hides": one("SELECT COUNT(1) FROM event WHERE kind='hide'"),
+    "kinds": counts("SELECT kind, COUNT(1) FROM event GROUP BY kind ORDER BY 2 DESC"),
+    "hide_reasons": counts("SELECT COALESCE(payload,'未填'), COUNT(1) FROM event WHERE kind='hide' GROUP BY 1 ORDER BY 2 DESC"),
+    "buckets": buckets,
+    "fitted_at": conn.query_row("SELECT MAX(fitted_at) FROM model_weight", [], |r| r.get::<_, Option<i64>>(0)).ok().flatten().unwrap_or(0),
+  })
+}
+
 // ================================================================ 界面要的四个入口（P6）
 /// 按通道取一页。channel=None 表示全部。
 /// 通道是"内容从哪来"的标签，不是"给用户看第几个 tab"的标签 —— 两者必须能对上，

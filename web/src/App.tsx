@@ -51,12 +51,14 @@ import {
 } from "./lib/store";
 import { DetailView } from "./views/DetailView";
 import { FeedView } from "./views/FeedView";
+import { MeView } from "./views/MeView";
 import { SettingsView } from "./views/SettingsView";
 import { StatsView } from "./views/StatsView";
 
 const RAIL = [
   { id: "hot", label: "发现", icon: FlameIcon },
   { id: "saved", label: "收藏", icon: BookmarkIcon },
+  { id: "me", label: "我的", icon: UserRoundIcon },
   { id: "stats", label: "统计", icon: BarChart3Icon },
   { id: "set", label: "设置", icon: SettingsIcon },
 ];
@@ -66,7 +68,7 @@ export default function App() {
   const nonce = useFeedNonce();
   const channel = useChannel();
   const dbg = useDbg();
-  const [page, setPage] = useState<"feed" | "stats" | "set">("feed");
+  const [page, setPage] = useState<"feed" | "me" | "stats" | "set">("feed");
   const [tab, setTab] = useState("look");
   const [openId, setOpenId] = useState<number | null>(null);
   const [q, setQ] = useState("");
@@ -131,17 +133,19 @@ export default function App() {
                   <SidebarMenuItem key={id}>
                     <SidebarMenuButton
                       isActive={
-                        id === "stats"
-                          ? page === "stats"
-                          : id === "set"
-                            ? page === "set"
-                            : page === "feed" &&
-                              openId == null &&
-                              (id === "hot" ? channel !== "saved" : channel === "saved")
+                        id === "me"
+                          ? page === "me"
+                          : id === "stats"
+                            ? page === "stats"
+                            : id === "set"
+                              ? page === "set"
+                              : page === "feed" &&
+                                openId == null &&
+                                (id === "hot" ? channel !== "saved" : channel === "saved")
                       }
                       onClick={() => {
                         setOpenId(null);
-                        if (id === "stats" || id === "set") setPage(id);
+                        if (id === "me" || id === "stats" || id === "set") setPage(id);
                         else {
                           setPage("feed");
                           setChannel(id === "saved" ? "saved" : "hot");
@@ -160,7 +164,10 @@ export default function App() {
                 size="xs"
                 variant="ghost"
                 className="w-full justify-start"
-                onClick={goLogin}
+                onClick={() => {
+                  setPage("me");
+                  setOpenId(null);
+                }}
               >
                 <UserRoundIcon />
                 {snap.account ? "@" + snap.account : "未登录"}
@@ -285,6 +292,8 @@ export default function App() {
 
         {openId != null ? (
           <DetailView repoId={openId} onBack={() => setOpenId(null)} onNotice={notice} />
+        ) : page === "me" ? (
+          <MeView />
         ) : page === "stats" ? (
           <StatsView />
         ) : page === "set" ? (

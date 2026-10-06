@@ -107,6 +107,12 @@ fn main() {
     println!("  最近曝光(repo/slot/通道): {:?}", st2.query_map([], |r| Ok(format!("{}/{}/{}", r.get::<_,i64>(0)?, r.get::<_,i64>(1)?, r.get::<_,String>(2)?))).unwrap().flatten().collect::<Vec<_>>());
     return;
   }
+  if args.get(1).map(|s| s.as_str()) == Some("me") {
+    // "我的"那一页的数据：直接打 JSON，方便对着界面核
+    let conn = feed::open_db().expect("打不开数据库");
+    println!("{}", feed::me_report(&conn));
+    return;
+  }
   let conn = feed::open_db().expect("打不开数据库");
   if let Err(e) = feed::run_collect(&conn, pages, curves, &mut |m| println!("{m}")) {
     println!("[collect 失败] {e}");
