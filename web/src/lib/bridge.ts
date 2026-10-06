@@ -67,10 +67,32 @@ export type Counts = {
   all: number;
   hot: number;
   profile: number;
+  social: number;
   explore: number;
   saved: number;
+  pool: number;
   last_collect: number;
+  last_refill: number;
 };
+
+/** 静默补货的状态（统计页用） */
+export type RefillStep = { at: number; step: number; channel: string; core_used: number; search_used: number; inserted: number };
+export type RefillStatus = {
+  pool: number;
+  last: RefillStep[];
+  enabled: boolean;
+  next_step: number;
+  social_sources: number;
+  profile_terms: number;
+};
+
+export function refillStatus(): Promise<RefillStatus> {
+  return call<RefillStatus>("refill_status");
+}
+/** 手动跑一轮（后台线程本来就会自己跑，这个是"我现在就想看更多"的那条路） */
+export function refillNow(): Promise<{ channel: string; inserted: number; note: string }> {
+  return call<{ channel: string; inserted: number; note: string }>("refill_now");
+}
 
 export type Account = {
   login: string;
@@ -321,7 +343,9 @@ export function openInside(url: string, repoId?: number): Promise<string> {
 /** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
 
-export const LIMIT = 40;
+/** 每页条数。2026-10-06 从 40 提到 100：他要的是"抓足量、少显示"，
+ *  池子几千条而一页只给 40 条，等于把攒下来的内容藏起来。 */
+export const LIMIT = 100;
 
 /** 磁盘日志：界面关掉以后还能复盘，判成败看这里而不是看退出码 */
 export function log(msg: string) {

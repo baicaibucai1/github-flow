@@ -20,6 +20,7 @@ const css = readdirSync(assetsDir)
 const store = readFileSync(join(web, "src", "lib", "store.tsx"), "utf8");
 const meview = readFileSync(join(web, "src", "views", "MeView.tsx"), "utf8");
 const settings = readFileSync(join(web, "src", "views", "SettingsView.tsx"), "utf8");
+const statview = readFileSync(join(web, "src", "views", "StatsView.tsx"), "utf8");
 const pkg = JSON.parse(readFileSync(join(web, "package.json"), "utf8"));
 // 仓库视图是跨语言的改动（Rust 取数 + command 注册 + 前端），所以断言也要跨过语言层
 const rust = readFileSync(join(web, "..", "src-tauri", "src", "feed.rs"), "utf8");
@@ -247,6 +248,46 @@ const CHECKS = [
         /border-s border-border/.test(treex) && /w-0\.5[\s\S]{0,40}bg-primary/.test(treex) && /h-7/.test(treex);
     })(),
   },
+  {
+    id: "refill-scheduler",
+    what: "后台静默补货挂在启动流程里（setup 里 spawn、20 分钟一步、设置可关）",
+    pass: /fn spawn_refill\(\)/.test(mainrs) && /spawn_refill\(\);/.test(mainrs) &&
+      /from_secs\(20 \* 60\)/.test(mainrs) && /refill_on/.test(mainrs),
+  },
+  {
+    id: "refill-budget",
+    what: "补货有硬护栏：配额低于 200 跳过整轮 + 用量用原子计数器记账（不是拿 /rate_limit 前后相减）",
+    pass: /core_left < 200/.test(rust) && /fn http_calls\(\)/.test(rust) &&
+      /HTTP_CORE_CALLS\.fetch_add/.test(rust) && /let core_used = calls1 - calls0/.test(rust),
+  },
+  {
+    id: "social-source-primary",
+    what: "相似用户以「我关注的人」为主要参考（权重 1.0），并顺着他们 follow 再走一跳（0.6）",
+    pass: /我关注的人（1\.0）——主参考/.test(rust) && /add\(who, 1\.0\)/.test(rust) &&
+      /users\/\{who\}\/following/.test(rust) && /add\(&u\.login, 0\.6\)/.test(rust),
+  },
+  {
+    id: "stargazers-locked",
+    what: "把「谁 star 了别人的仓库」这个端点已被 GitHub 锁掉写进代码（免得以后有人又去做行为共现）",
+    pass: /锁给仓库管理员/.test(rust) && /404/.test(rust),
+  },
+  {
+    id: "channel-slots",
+    what: "四条通道按槽位混排（不然画像/相似用户永远进不了前 50），且降权项不许占推荐位",
+    pass: /const PATTERN: \[&str; 20\]/.test(rust) && /热 11 \/ 画像 4 \/ 相似 3 \/ 探索 2/.test(rust) &&
+      /"profile" if !c\.spam => 1/.test(rust),
+  },
+  {
+    id: "feed-100",
+    what: "展示每页 100 条（抓足量、少显示）",
+    pass: /export const LIMIT = 100/.test(bridge),
+  },
+  {
+    id: "refill-visible",
+    what: "补货状态看得见：统计页有池子/上次补货/「现在补一轮」，设置页有开关",
+    pass: /refillStatus/.test(statview) && /现在补一轮/.test(statview) && /静默补货/.test(statview) &&
+      /refill_on/.test(settings) && /后台静默补货/.test(settings),
+  },
 ];
 
 let pass = 0;
@@ -332,6 +373,25 @@ if (liveArg) {
       const ac = raw(["actions", String(id)]);
       LIVE.push([`Actions 运行列表拿得到（共 ${ac.v?.total ?? 0} 次，取回 ${ac.v?.count ?? 0} 条）`,
         !!ac.v && ac.v.total > 0 && ac.v.items.length > 0 && !!ac.v.items[0].name]);
+      // ---- 补货器 / 相似用户 / 槽位混排（真打 GitHub，2026-10-06 加的第三条通道）
+      const st0 = raw(["refill-status"]);
+      LIVE.push([`补货状态读得到（池子 ${st0.v?.pool ?? 0} 条，开关 ${st0.v?.enabled ? "开" : "关"}）`,
+        !!st0.v && st0.v.pool > 500 && st0.v.enabled === true]);
+      const rf = raw(["refill"]);
+      LIVE.push([`跑一步补货：通道=${rf.v?.channel} 新增=${rf.v?.inserted}，真实请求 core ${rf.v?.core_used} / search ${rf.v?.search_used}`,
+        !!rf.v && ["profile", "hot", "explore", "social", "skip"].includes(rf.v.channel) &&
+          rf.v.core_used >= 1 && rf.v.core_used <= 60 && rf.v.pool_after >= rf.v.pool_before]);
+      const st1 = raw(["refill-status"]);
+      LIVE.push([`补货后池子只增不减（${st0.v?.pool} → ${st1.v?.pool}），状态里能看到画像词表与相似用户源`,
+        st1.v.pool >= st0.v.pool && st1.v.profile_terms > 0]);
+      const top = raw(["top", "12"]);
+      const nonHot = (top.v ?? []).filter((c) => c.channel !== "hot").length;
+      LIVE.push([`槽位混排生效：前 12 名里有 ${nonHot} 条来自非热榜通道（画像/相似用户/探索）`,
+        nonHot >= 1 && (top.v ?? []).length === 12]);
+      const soc = run(["social", "8"]);
+      const mm = soc.match(/入库 (\d+) 条/);
+      LIVE.push([`相似用户通道跑得动（${mm ? mm[1] : "?"} 条入库，源以「我关注的人」为主）`,
+        /我关注 \d+（主）/.test(soc) && !!mm && Number(mm[1]) > 0]);
     } catch (e) {
       LIVE.push(["live 跑通了（上面若有 FAIL 是这条没执行）", false]);
       console.log("  live 异常：" + String(e).slice(0, 200));

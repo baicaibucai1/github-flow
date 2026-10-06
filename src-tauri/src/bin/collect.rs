@@ -122,6 +122,79 @@ fn main() {
     }
     return;
   }
+  // ---- 只看榜：不发任何请求，用来核对"排序结果与推荐理由"
+  if args.get(1).map(|s| s.as_str()) == Some("top") {
+    let conn = feed::open_db().expect("打不开数据库");
+    let n: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(12);
+    let login = feed::active_login(&conn);
+    println!("[top] @{login} 前 {n} 名（不发请求）");
+    let cards = feed::load_feed(&conn, &login, n, 0);
+    println!("RAW {}", serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into()));
+    for (i, c) in cards.iter().enumerate() {
+      println!(
+        " {:>2}. {:<44} {:.3} 通道={:<7} 窗口={:<7}{}",
+        i + 1,
+        c.full_name,
+        c.score,
+        c.channel,
+        c.window,
+        if c.spam { " [降权]" } else { "" }
+      );
+      println!("     {}", c.why.join(" · "));
+    }
+    return;
+  }
+  // ---- 通用认证探针：collect api /repos/{o}/{r}/stargazers
+  // 用来确认"这个端点在**我们的凭据下**到底返回什么"。实测过的一个反例：
+  // /stargazers 匿名 401，而我们带 token 却拿到 404 —— 方向反了，必须当场看清是哪一层的问题。
+  // 只打印状态码与响应的前 200 字符，绝不回显任何凭据。
+  if args.get(1).map(|s| s.as_str()) == Some("api") {
+    let path = args.get(2).map(|s| s.as_str()).unwrap_or("");
+    if path.is_empty() {
+      println!("用法：collect api /repos/<owner>/<repo>/stargazers [accept]");
+      return;
+    }
+    let accept = args.get(3).map(|s| s.as_str()).unwrap_or("application/vnd.github+json");
+    match feed::probe_get(path, accept) {
+      Ok((code, body)) => {
+        println!("[api] {path} → {code}");
+        println!("{}", &body[..body.len().min(200)]);
+      }
+      Err(e) => println!("[api] {path} 请求失败：{e}"),
+    }
+    return;
+  }
+  // ---- 静默补货一步 / 相似用户通道 / 补货状态
+  // refill 是那个后台调度器每一步做的事，命令行手动跑一遍才能验证"池子真的会长"。
+  if ["social", "refill", "refill-status"].contains(&args.get(1).map(|s| s.as_str()).unwrap_or("")) {
+    let conn = feed::open_db().expect("打不开数据库");
+    let sub = args.get(1).unwrap().as_str();
+    let emit = &mut |m: String| println!("{m}");
+    match sub {
+      "social" => {
+        let sources: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(20);
+        let login = feed::active_login(&conn);
+        println!("[social] 用 @{login} 的人际圈当源（关注 + 关注我 + star 过我仓库的人）");
+        match feed::run_social(&conn, &login, sources, emit) {
+          Ok(m) => println!("{m}"),
+          Err(e) => println!("失败：{e}"),
+        }
+      }
+      "refill" => match feed::refill(&conn, emit) {
+        Ok(v) => {
+          println!("refill 通道={} 新增={}｜{}", v["channel"].as_str().unwrap_or("?"), v["inserted"], v["note"].as_str().unwrap_or(""));
+          println!("RAW {v}");
+        }
+        Err(e) => println!("补货失败：{e}"),
+      },
+      _ => {
+        let v = feed::refill_status(&conn);
+        println!("{v}");
+        println!("RAW {v}");
+      }
+    }
+    return;
+  }
   // 本机没有 sqlite3 CLI，要看库里的 repo.id 只能靠这条（tree/file/list 都按 id 取）
   if args.get(1).map(|s| s.as_str()) == Some("repos") {
     let conn = feed::open_db().expect("打不开数据库");

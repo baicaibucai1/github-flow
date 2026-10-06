@@ -5,6 +5,8 @@
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { DetailView } from "./views/DetailView";
+import { StatsView } from "./views/StatsView";
+import { initStore } from "./lib/store";
 
 const TREE = {
   branch: "main",
@@ -147,6 +149,21 @@ w.__TAURI_INTERNALS__ = {
     if (cmd === "issue_comments") return { count: 1, items: [{ author: "bob", association: "MEMBER", created_at: "2026-10-02T00:00:00Z", body_html: "<p>探针评论正文</p>" }] };
     if (cmd === "actions_runs") return RUNS;
     if (cmd === "open_in_app_window") return "已打开应用内浏览窗口";
+    // 统计页要用
+    if (cmd === "get_stats")
+      return { pool: 4045, ranked: 100, impressions: 306, reach: 37, sessions: 39, opens: 29, hides: 0, saved: 0, login: "probe", db: "C:/probe.db" };
+    if (cmd === "refill_status")
+      return {
+        pool: 4045, enabled: true, next_step: 3, social_sources: 31, profile_terms: 350,
+        last: [
+          { at: Math.floor(Date.now() / 1000) - 120, step: 2, channel: "explore", core_used: 6, search_used: 6, inserted: 6 },
+          { at: Math.floor(Date.now() / 1000) - 600, step: 1, channel: "hot", core_used: 12, search_used: 9, inserted: 38 },
+        ],
+      };
+    if (cmd === "get_counts") return { all: 900, hot: 800, profile: 587, social: 1923, explore: 40, saved: 0, pool: 4045, last_collect: 0, last_refill: 0 };
+    if (cmd === "me_report")
+      return { login: "probe", terms: [], langs: [], min_n: 20, profile_hits: 0, starred_snapshot: 0, saved: 0, hides: 0, kinds: [], hide_reasons: [], buckets: [], fitted_at: 0 };
+    if (cmd === "settings_json") return { refill_on: "1", theme: "light", set: "github" };
     if (cmd === "log_event" && args.kind === "dwell") dwells.push(JSON.parse(String(args.payload)));
     return {};
   },
@@ -236,6 +253,22 @@ async function run() {
   ok("切回概览：树还在（没被卸载重取）", !!box("文件") && calls.filter((c) => c.startsWith("repo_tree")).length === 1,
     calls.filter((c) => c.startsWith("repo_tree")).join(","));
   ok("整轮流程没有把用户甩到系统浏览器", externalCalls().length === 0, externalCalls().join(","));
+
+  // ---- 统计页的补货面板（换一个 root 渲染，不再碰 DetailView）
+  const box2 = document.createElement("div");
+  box2.id = "probe-stats";
+  document.body.appendChild(box2);
+  initStore();
+  createRoot(box2).render(<StatsView />);
+  await sleep(700);
+  const sv = () => box2.innerText;
+  ok("统计页有「静默补货」这一块，并写明抓进来的量远大于展示量",
+    sv().includes("静默补货") && /池子\s*4,?045/.test(sv()) && sv().includes("远大于展示量"));
+  ok("补货面板显示画像词表与相似用户源", sv().includes("画像词表 350") && sv().includes("相似用户源 31"));
+  ok("补货面板列出最近几轮的用量（哪个通道、新增多少、请求几次）",
+    sv().includes("explore") && sv().includes("新增 6") && sv().includes("core 12"));
+  ok("有「现在补一轮」按钮", sv().includes("现在补一轮"));
+  ok("四档通道里出现「相似用户」这一档", sv().includes("相似用户") && /1,?923/.test(sv()));
 
   const keep = new URLSearchParams(location.search).has("keep");
   if (!keep) {

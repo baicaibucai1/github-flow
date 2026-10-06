@@ -195,7 +195,7 @@ function Translate() {
 }
 
 function Data() {
-  const { stats, auth } = useApp();
+  const { stats, auth, settings } = useApp();
   const [busy, setBusy] = useState("");
   const run = (label: string, p: Promise<unknown>, done: string) => {
     setBusy(label);
@@ -208,6 +208,23 @@ function Data() {
   };
   return (
     <Box title="数据" aside={<span>一次完整采集约 60~90 次请求</span>}>
+      <Row
+        label="后台静默补货"
+        desc={
+          <>
+            开启后每 20 分钟自己补一小步（画像 → 热度 → 探索 → 相似用户），<b>不弹任何通知</b>。
+            抓进来的量远大于展示量，所以榜单不会"看着看着就没了"。开关状态和最近几轮的用量在统计页能看到。
+          </>
+        }
+      >
+        <Switch
+          checked={settings.refill_on !== "0"}
+          onCheckedChange={(v) => {
+            persist("refill_on", v ? "1" : "0");
+            notice(v ? "已开启后台补货" : "已关闭后台补货（下次启动生效）");
+          }}
+        />
+      </Row>
       <Row label="立即采集" desc="热度榜（7/30/90 天出生）＋对粗排后的候选补测 star 曲线。">
         <Button
           size="xs"

@@ -324,6 +324,51 @@ fn build_menu(app: &tauri::App) -> tauri::Result<()> {
   Ok(())
 }
 
+/// 静默补货：手动触发一轮（设置页那个按钮）。平时是后台线程自己在跑，见 spawn_refill。
+#[tauri::command]
+fn refill_now() -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::refill(&c, &mut sink)
+}
+
+#[tauri::command]
+fn refill_status() -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  Ok(feed::refill_status(&c))
+}
+
+/// 后台补货线程：启动后 25 秒跑一次（两小步：画像 + 热度，让个性化先落地），
+/// 此后每 20 分钟一小步（按通道轮转）。**不弹通知**，只写 ui.log 和 refill_log 表；
+/// 每步的请求量由各通道的步长参数钉死（实测画像那步 ≈ 22 次 core + 14 次 search），
+/// 另外 refill 内部跑前会探一次余额，低于 200 直接跳过，不会把配额用光。
+/// 开关是设置里的 refill_on（默认 "1"）。
+fn spawn_refill() {
+  std::thread::spawn(move || {
+    std::thread::sleep(std::time::Duration::from_secs(25));
+    let mut first = true;
+    loop {
+      let enabled = feed::open_db()
+        .map(|c| feed::get_settings(&c)["refill_on"].as_str().unwrap_or("1") == "1")
+        .unwrap_or(false);
+      if enabled {
+        if let Ok(c) = feed::open_db() {
+          let mut sink = |s: String| { let _ = js_log(s); };
+          let rounds = if first { 2 } else { 1 };
+          for _ in 0..rounds {
+            match feed::refill(&c, &mut sink) {
+              Ok(v) => { let _ = js_log(format!("[refill] 完成 {} +{}｜{}", v["channel"].as_str().unwrap_or("?"), v["inserted"], v["note"].as_str().unwrap_or(""))); }
+              Err(e) => { let _ = js_log(format!("[refill] 失败：{e}")); }
+            }
+          }
+        }
+      }
+      first = false;
+      std::thread::sleep(std::time::Duration::from_secs(20 * 60));
+    }
+  });
+}
+
 fn main() {
   tauri::Builder::default()
     // 自动更新。没有这两个插件注册，前端调 check() 会报
@@ -332,9 +377,11 @@ fn main() {
     .plugin(tauri_plugin_process::init())
     .setup(|app| {
       build_menu(app)?;
+      // 静默补货：界面起来之前就开始在后台悄悄攒内容，用户不需要点任何按钮
+      spawn_refill();
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list, issue_detail, issue_comments, pr_detail, pr_files, actions_runs])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list, issue_detail, issue_comments, pr_detail, pr_files, actions_runs, refill_now, refill_status])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

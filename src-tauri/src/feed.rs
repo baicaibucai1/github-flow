@@ -65,7 +65,7 @@ struct Bucket {
   days: Vec<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 struct RepoJson {
   id: i64,
   full_name: String,
@@ -117,6 +117,20 @@ pub struct Card {
 }
 
 // ---------------------------------------------------------------- 配额记账
+// 进程级请求计数：给补货器算"这一步到底发了多少次请求"用。
+// 为什么不用 /rate_limit 前后相减——实测那个端点是缓存值（同一个 60 秒窗口里读两次，
+// 第二次仍报 search=30，而这一轮已经跑掉 14 次），拿它做差会算出 0，等于预算没在管。
+// get_json_as 是唯一的出口，所以在这里计数最省事也最准。
+static HTTP_CORE_CALLS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+static HTTP_SEARCH_CALLS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+pub fn http_calls() -> (i64, i64) {
+  (
+    HTTP_CORE_CALLS.load(std::sync::atomic::Ordering::Relaxed),
+    HTTP_SEARCH_CALLS.load(std::sync::atomic::Ordering::Relaxed),
+  )
+}
+
 struct Http {
   core_left: i64,
   search_left: i64,
@@ -171,9 +185,11 @@ impl Http {
     match req.call() {
       Ok(mut r) => {
         if kind == "search" {
-          self.search_left -= 1
+          self.search_left -= 1;
+          HTTP_SEARCH_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         } else {
-          self.core_left -= 1
+          self.core_left -= 1;
+          HTTP_CORE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         match r.body_mut().read_json::<T>() {
           Ok(v) => Some(v),
@@ -513,20 +529,34 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
   }
 
   if !login.is_empty() {
-    let hits: Vec<(i64, f64, String)> = {
-      let mut st = conn.prepare("SELECT repo_id, rrf, terms FROM feed_hit WHERE login=?1 AND channel='profile'").unwrap();
-      let v = st.query_map(params![login], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().flatten().collect();
+    // profile 与 social 都走 feed_hit：前者是"词表命中"，后者是"我信任的人收藏了它"
+    let hits: Vec<(i64, String, f64, String)> = {
+      let mut st = conn.prepare(
+        "SELECT repo_id, channel, rrf, terms FROM feed_hit WHERE login=?1 AND channel IN ('profile','social')").unwrap();
+      let v = st.query_map(params![login], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().flatten().collect();
       drop(st); v
     };
-    let mut hm: std::collections::HashMap<i64,(f64,String)> = std::collections::HashMap::new();
-    for (id, rrf, terms) in hits { hm.insert(id, (rrf, terms)); }
+    // 同一个仓库可能两条通道都命中；social 的权重更高（"人"比"词"可信），所以按通道取大而不是相加
+    let mut hm: std::collections::HashMap<i64,(String,f64,String)> = std::collections::HashMap::new();
+    for (id, ch, rrf, terms) in hits {
+      let w = if ch == "social" { rrf * 1.4 } else { rrf };
+      match hm.get(&id) {
+        Some((_, prev, _)) if *prev >= w => {}
+        _ => { hm.insert(id, (ch, w, terms)); }
+      }
+    }
     for c in cards.iter_mut() {
-      if let Some((rrf, terms)) = hm.get(&c.id) {
-        c.channel = "profile".into();
+      if let Some((ch, rrf, terms)) = hm.get(&c.id) {
         let bonus = (rrf * 0.5).min(0.35);
         c.score += bonus;
         let shown: Vec<String> = serde_json::from_str(terms).unwrap_or_default();
-        c.why.insert(0, format!("画像命中：{}", shown.join("/")));
+        if ch == "social" {
+          c.channel = "social".into();
+          c.why.insert(0, format!("{} 收藏了它", shown.join("、")));
+        } else {
+          c.channel = "profile".into();
+          c.why.insert(0, format!("画像命中：{}", shown.join("/")));
+        }
       }
     }
   }
@@ -572,10 +602,68 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
     } else { Default::default() };
     for c in cards.iter_mut() { c.saved = set.contains(&c.id); c.seen = seen.contains(&c.id); }
   }
-  cards.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+  // ---------------------------------------------------------------- 通道槽位（2026-10-06）
+  //
+  // 为什么不能只按总分排：hot 的候选有斜率，基础分天然 0.4~0.6；而画像与相似用户的候选
+  // 大多没有斜率（基础分 0），只有 `min(rrf*0.5, 0.35)` 那一档加成。混排的结果是
+  // **新通道一条都进不了前 50**——实测：1923 条 social + 587 条 profile 全被 hot 压在下面，
+  // 前 6 名清一色 通道=hot。这不是打分错了，是"能算分的"和"算不出分的"不该放同一个尺子量。
+  // 手册 §5.4 对探索层早就写过这条（"必须按槽位插入，否则被系统性压死"），现在推广到全部四条通道。
+  //
+  // 配比：热 11 / 画像 4 / 相似 3 / 探索 2（每 20 个槽位一组）。某条通道没货时让位给 hot，
+  // 全都没货就让位给任意还有货的通道——不能因为配额没填满就少给用户内容。
+  // 配比：热 11 / 画像 4 / 相似 3 / 探索 2（每 20 个槽位一组）
+  const PATTERN: [&str; 20] = [
+    "hot", "hot", "profile", "hot", "social", "hot", "hot", "profile", "hot", "explore",
+    "hot", "hot", "profile", "social", "hot", "hot", "explore", "hot", "profile", "social",
+  ];
+
+  // 四条通道各自排好，再按固定配比交替取。用数组装桶是为了取用时只有下标、没有借用纠缠
+  // （第一版写成"累计取用数 vs 递减长度"比较，结果从空桶里 remove 直接 panic）。
+  let mut buckets: [Vec<Card>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()]; // hot / profile / social / explore
+  for c in cards {
+    let i = match c.channel.as_str() {
+      // 被规则降权的项**不许占用画像/相似/探索的推荐位**：实测它们总是分数最高的一批
+      // （因为有斜率），一插就把这三个通道全占了，用户看到的是垃圾坐推荐位。
+      // 它们仍然留在池子里，靠 hot 桶按分数自然排（那儿有 0.4 的乘性降权）。
+      "profile" if !c.spam => 1,
+      "social" if !c.spam => 2,
+      _ if c.window == "explore" && !c.spam => 3,
+      _ => 0,
+    };
+    buckets[i].push(c);
+  }
+  for b in buckets.iter_mut() {
+    b.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+  }
+  let total: usize = buckets.iter().map(|b| b.len()).sum();
+  let slot_of = |name: &str| match name {
+    "profile" => 1,
+    "social" => 2,
+    "explore" => 3,
+    _ => 0,
+  };
+  let mut interleaved: Vec<Card> = Vec::with_capacity(total);
+  let mut k = 0usize;
+  while interleaved.len() < total {
+    let mut want = slot_of(PATTERN[k % PATTERN.len()]);
+    if buckets[want].is_empty() {
+      // 该通道没货就让位：先让给热榜，热榜也空了就让给任意还有货的
+      want = if !buckets[0].is_empty() {
+        0
+      } else {
+        match (0..4).find(|i| !buckets[*i].is_empty()) {
+          Some(i) => i,
+          None => break,
+        }
+      };
+    }
+    interleaved.push(buckets[want].remove(0));
+    k += 1;
+  }
   // 打散：同一 owner 不连续出现两次
-  let mut out: Vec<Card> = Vec::with_capacity(cards.len());
-  let mut buf = cards;
+  let mut out: Vec<Card> = Vec::with_capacity(interleaved.len());
+  let mut buf = interleaved;
   while !buf.is_empty() {
     let pos = buf
       .iter()
@@ -636,7 +724,7 @@ fn ensure_profile_tables(conn: &Connection) {
     .ok();
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, serde::Serialize)]
 struct StarredItem {
   #[serde(flatten)]
   repo: RepoJson,
@@ -682,6 +770,61 @@ pub fn build_profile(conn: &Connection, login: &str, pages: i64, emit: &mut dyn 
       n_stars += 1;
     }
     std::thread::sleep(std::time::Duration::from_millis(150));
+  }
+
+  // 除收藏之外的两个原料（2026-10-06 补）。原因很实在：他 starred 0 条、关注 3 人，
+  // 只靠收藏建画像的话词表永远是空的——而个性化通道全靠这张表。
+  // ① 他自己的仓库：最直白的口味声明（topics + 描述 + 语言）
+  let mut n_own = 0;
+  {
+    let mut q = BTreeMap::new();
+    q.insert("per_page", "100".into());
+    q.insert("sort", "updated".into());
+    let res: Option<Vec<RepoJson>> = http.get_json(&format!("/users/{login}/repos"), &q, "core", emit);
+    if let Some(list) = res {
+      for r in &list {
+        let text = format!(
+          "{} {} {}",
+          r.full_name.replace('/', " "),
+          r.description.clone().unwrap_or_default(),
+          r.topics.clone().unwrap_or_default().join(" ")
+        );
+        docs.push((1.2, text));
+        if let Some(l) = &r.language {
+          *langs.entry(l.clone()).or_insert(0.0) += 1.2;
+        }
+        n_own += 1;
+      }
+    }
+  }
+  // ② 本机行为：点开过 / 停留过 / 在应用内收藏过的仓库。不需要任何请求——库里就有它们的名字、
+  //    描述与 topics（入库时抓过），所以这条原料是"零成本"的，而且它比收藏更能反映当下在看什么。
+  let mut n_behavior = 0;
+  {
+    let rows: Vec<(String, String, Option<String>, i64)> = {
+      let mut st = match conn.prepare(
+        "SELECT r.full_name, COALESCE(r.topics,'[]'), r.description, MAX(e.ts) AS last_ts
+         FROM event e JOIN repo r ON r.id = e.repo_id
+         WHERE e.repo_id IS NOT NULL AND e.kind IN ('star_in_app','open','dwell')
+         GROUP BY e.repo_id ORDER BY last_ts DESC LIMIT 60",
+      ) {
+        Ok(s) => s,
+        Err(_) => return Err("读行为日志失败（表可能还没建）".into()),
+      };
+      st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .map(|rows| rows.filter_map(|x| x.ok()).collect())
+        .unwrap_or_default()
+    };
+    for (full, topics, desc, last_ts) in rows {
+      let age_days = ((ts - last_ts) / 86_400).max(0) as f64;
+      let decay = (-age_days / 30.0).exp(); // 行为比收藏衰减快：上看过的≠现在还想看
+      let text = format!("{} {} {}", full.replace('/', " "), desc.unwrap_or_default(), topics.replace(['[', ']', '"'], " "));
+      docs.push((1.0 * decay, text));
+      n_behavior += 1;
+    }
+  }
+  if n_own == 0 && n_behavior == 0 && n_stars == 0 {
+    emit("[profile] 收藏 0、自己的仓库 0、行为 0——没有原料可建画像".into());
   }
 
   // idf 用本地候选池统计（手册 6 节：没有全网词频，而本地池恰好就是我们要从中推荐的东西）
@@ -733,7 +876,11 @@ pub fn build_profile(conn: &Connection, login: &str, pages: i64, emit: &mut dyn 
     conn.execute("INSERT OR REPLACE INTO profile_language(login, language, weight) VALUES(?1,?2,?3)",
       params![login, l, v / lsum.max(0.001)]).ok();
   }
-  let msg = format!("[profile] @{login} 收藏 {n_stars} 条 → 词表 {} 个，语言偏好 {:?}", top.len(), langs.iter().take(3).map(|(k, v)| (k.clone(), v.round() as i64)).collect::<Vec<_>>());
+  let msg = format!(
+    "[profile] @{login} 收藏 {n_stars} + 自己的仓库 {n_own} + 行为 {n_behavior} → 词表 {} 个，语言偏好 {:?}",
+    top.len(),
+    langs.iter().take(3).map(|(k, v)| (k.clone(), v.round() as i64)).collect::<Vec<_>>()
+  );
   emit(msg.clone());
   Ok(msg)
 }
@@ -782,6 +929,323 @@ pub fn run_profile_search(conn: &Connection, login: &str, emit: &mut dyn FnMut(S
   let msg = format!("[profile-search] 跑了 {used} 条查询，命中 {n} 个候选（search 剩余 {}）", http.search_left);
   emit(msg.clone());
   Ok(msg)
+}
+
+// ================================================================ 通道三：相似用户（我的人际圈）
+//
+// 先说清为什么不是"行为共现"（他 2026-10-06 选的正是那条）：实测发现 **GitHub 已经把
+// `/repos/{o}/{r}/stargazers` 锁给仓库管理员**——匿名 401、带 token 看别人的仓库 404、
+// 只有自己的仓库 200（同批实测：`/repos/react/react/subscribers` 也是 404，
+// 而 `/repos/react/react/forks` 和 `/users/{任何人}/starred` 都是 200）。
+// 也就是说"谁 star 了我喜欢的仓库"这个查询在他们那边不存在了，共现路线无从下手。
+//
+// 能走通的是**我的人际圈**：我关注的人 + 关注我的人 + star 过我仓库的人 → 看他们最近收藏了什么。
+// 这仍然是单机、只读、1 跳，没有服务端，也没有跨用户数据库——D5 否掉的那个 CF 依然没回来。
+//
+// 他关注只有 3 人、followers 7 人，所以第三类源（star 过我项目的人）是主力补充：
+// 那批人是"对我的东西感兴趣的人"，他们的收藏清单是这条通道里最有信息量的一档。
+//
+// 三处近似：
+// ① 每类源最多取一页 100 人，不翻页；
+// ② 判"这个源还活着"只看他收藏列表最新一条的时间（>45 天视为休眠，对齐手册 §5.5 的护栏）；
+// ③ 一个人的收藏只取第一页 100 条（按收藏时间倒序），一年前的条目直接丢。
+
+#[derive(Deserialize)]
+struct LoginOnly {
+  login: String,
+}
+#[derive(Deserialize)]
+struct StarGazer {
+  starred_at: Option<String>,
+  user: LoginOnly,
+}
+
+fn ensure_social_tables(conn: &Connection) {
+  conn
+    .execute_batch(
+      "CREATE TABLE IF NOT EXISTS social_cache(
+         login TEXT PRIMARY KEY, fetched_at INTEGER NOT NULL, newest_at INTEGER NOT NULL,
+         weight REAL NOT NULL DEFAULT 0, items TEXT NOT NULL);
+       CREATE TABLE IF NOT EXISTS refill_log(
+         id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, step INTEGER NOT NULL,
+         channel TEXT NOT NULL, core_used INTEGER NOT NULL, search_used INTEGER NOT NULL,
+         inserted INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '');",
+    )
+    .ok();
+}
+
+/// 源列表，按"离我多近"分四档（2026-10-06 他指定：**以我关注的人为主要参考**）：
+///   ① 我关注的人（1.0）——主参考
+///   ② 他们 follow 的人（0.6）——"我关注的人 follow 的人"，顺着信任链再走一跳
+///   ③ 关注我的人（0.5）
+///   ④ star 过我仓库的人（0.3）
+/// 去重（取最高档）、按权重排序、取前 max 个。②的扩张只取每个主源的第一页，避免一个人关注 5000 就把源撑爆。
+pub fn social_sources(conn: &Connection, my_login: &str, max: i64, emit: &mut dyn FnMut(String)) -> Vec<(String, f64)> {
+  let mut http = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  let mut score: BTreeMap<String, f64> = BTreeMap::new();
+  let mut add = |who: &str, w: f64| {
+    if who.is_empty() || who == my_login {
+      return;
+    }
+    let e = score.entry(who.to_string()).or_insert(0.0);
+    if w > *e {
+      *e = w;
+    }
+  };
+  let mut q = BTreeMap::new();
+  q.insert("per_page", "100".to_string());
+
+  // ① 我关注的人（主参考）
+  let following: Option<Vec<LoginOnly>> = http.get_json(&format!("/users/{my_login}/following"), &q, "core", emit);
+  let hops: Vec<String> = following.unwrap_or_default().iter().map(|u| u.login.clone()).collect();
+  for who in &hops {
+    add(who, 1.0);
+  }
+  // ② 他们 follow 的人（只取前 3 个主源，一人一页）
+  let mut n_hop2 = 0;
+  for who in hops.iter().take(3) {
+    let res: Option<Vec<LoginOnly>> = http.get_json(&format!("/users/{who}/following"), &q, "core", emit);
+    for u in res.unwrap_or_default() {
+      add(&u.login, 0.6);
+      n_hop2 += 1;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(120));
+  }
+  // ③ 关注我的人
+  let followers: Option<Vec<LoginOnly>> = http.get_json(&format!("/users/{my_login}/followers"), &q, "core", emit);
+  let mut n_followers = 0;
+  for u in followers.unwrap_or_default() {
+    add(&u.login, 0.5);
+    n_followers += 1;
+  }
+  // ④ star 过我仓库的人（这些仓库我确实有权限看名单，实测 200）
+  let mine: Vec<(String, i64)> = {
+    let mut st = match conn.prepare("SELECT full_name, stars FROM repo WHERE owner=?1 ORDER BY stars DESC LIMIT 5") {
+      Ok(s) => s,
+      Err(_) => return Vec::new(),
+    };
+    st.query_map(params![my_login], |r| Ok((r.get(0)?, r.get(1)?)))
+      .map(|rows| rows.filter_map(|x| x.ok()).collect())
+      .unwrap_or_default()
+  };
+  let mut n_starred_me = 0;
+  for (full, _) in &mine {
+    let res: Option<Vec<LoginOnly>> = http.get_json(&format!("/repos/{full}/stargazers"), &q, "core", emit);
+    for u in res.unwrap_or_default() {
+      add(&u.login, 0.3);
+      n_starred_me += 1;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(120));
+  }
+
+  let mut v: Vec<(String, f64)> = score.into_iter().collect();
+  v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+  emit(format!(
+    "[social] 源：我关注 {}（主）+ 他们 follow 的 {} + 关注我 {} + star 过我仓库 {} → 去重 {} 人，取前 {}",
+    hops.len(),
+    n_hop2,
+    n_followers,
+    n_starred_me,
+    v.len(),
+    max
+  ));
+  v.truncate(max.max(0) as usize);
+  v
+}
+
+/// 抓这些人最近收藏了什么并入库（channel='social'）。休眠源（最新一条收藏超过 45 天）直接跳过。
+pub fn run_social(conn: &Connection, login: &str, source_n: i64, emit: &mut dyn FnMut(String)) -> Result<String, String> {
+  ensure_social_tables(conn);
+  let ts = now_s();
+  let sources = social_sources(conn, login, source_n, emit);
+  if sources.is_empty() {
+    let m = "[social] 没有可用的源（关注 0、followers 0、自己仓库没被 star）——这条通道暂时没料".to_string();
+    emit(m.clone());
+    return Ok(m);
+  }
+
+  let mut http = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  let mut inserted = 0usize;
+  let mut skipped_dormant = 0usize;
+  let mut used_cache = 0usize;
+  for (who, base_w) in &sources {
+    // 缓存 24 小时：同一个人的收藏一天看一次就够，重复拉等于白烧配额
+    let cached: Option<(i64, i64, f64, String)> = conn
+      .query_row("SELECT fetched_at, newest_at, weight, items FROM social_cache WHERE login=?1", params![who], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+      })
+      .ok();
+    let (weight, items_json) = match cached {
+      Some((at, newest, w, items)) if at > ts - 86_400 => {
+        used_cache += 1;
+        if newest > 0 && (ts - newest) / 86_400 > 45 {
+          skipped_dormant += 1;
+          continue;
+        }
+        (w * base_w / 0.8_f64.max(w), items)
+      }
+      _ => {
+        let mut q = BTreeMap::new();
+        q.insert("per_page", "100".to_string());
+        q.insert("sort", "created".to_string());
+        let res: Option<Vec<StarredItem>> =
+          http.get_json_as(&format!("/users/{who}/starred"), &q, "core", "application/vnd.github+json", emit);
+        let Some(list) = res else { continue };
+        let newest = list.iter().filter_map(|x| x.starred_at.as_deref().map(iso_from_created)).max().unwrap_or(0);
+        // 手册 §5.5 的护栏：源自己都不怎么活跃了，就别拿他的收藏当推荐理由
+        if newest > 0 && (ts - newest) / 86_400 > 45 {
+          conn.execute(
+            "INSERT OR REPLACE INTO social_cache(login, fetched_at, newest_at, weight, items) VALUES(?1,?2,?3,?4,?5)",
+            params![who, ts, newest, 0.8, serde_json::to_string(&list).unwrap()],
+          )
+          .ok();
+          skipped_dormant += 1;
+          emit(format!("[social] @{who} 最近一条收藏是 {} 天前，按休眠跳过", (ts - newest) / 86_400));
+          continue;
+        }
+        // 活跃度权重：最近 90 天收藏了多少条（满 100 条记 1.0）
+        let recent = list
+          .iter()
+          .filter(|x| x.starred_at.as_deref().map(|s| (ts - iso_from_created(s)) / 86_400 <= 90).unwrap_or(false))
+          .count();
+        let w = (recent as f64 / 100.0).min(1.0).max(0.05);
+        conn.execute(
+          "INSERT OR REPLACE INTO social_cache(login, fetched_at, newest_at, weight, items) VALUES(?1,?2,?3,?4,?5)",
+          params![who, ts, newest, w, serde_json::to_string(&list).unwrap()],
+        )
+        .ok();
+        (w, serde_json::to_string(&list).unwrap())
+      }
+    };
+
+    let list: Vec<StarredItem> = serde_json::from_str(&items_json).unwrap_or_default();
+    for (rank, it) in list.iter().enumerate() {
+      let when = it.starred_at.as_deref().map(iso_from_created).unwrap_or(ts);
+      let age_days = ((ts - when) / 86_400).max(0) as f64;
+      if age_days > 365.0 {
+        continue; // 一年前的收藏不代表他现在的口味
+      }
+      upsert_repo(conn, &it.repo, "social", ts);
+      // rrf 里带上"这个人离我多近"和"这条有多新"：load_feed 会把它折算成 ≤0.35 的加分
+      let rrf = (0.12 * base_w * weight) * (-age_days / 180.0).exp() / (1.0 + rank as f64 / 60.0);
+      conn
+        .execute(
+          "INSERT INTO feed_hit(repo_id, login, channel, rrf, terms) VALUES(?1,?2,'social',?3,?4)
+           ON CONFLICT(repo_id, login, channel) DO UPDATE SET rrf = MAX(rrf, excluded.rrf), terms = excluded.terms",
+          params![it.repo.id, login, rrf, format!("[\"@{who}\"]")],
+        )
+        .ok();
+      inserted += 1;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(120));
+  }
+  let m = format!(
+    "[social] 源 {} 人（缓存命中 {}、休眠跳过 {}）→ 入库 {} 条候选，core 剩余 {}",
+    sources.len(),
+    used_cache,
+    skipped_dormant,
+    inserted,
+    http.core_left
+  );
+  emit(m.clone());
+  Ok(m)
+}
+
+/// 静默补货一步。预算靠两件事保证：①各通道的步长参数把请求量钉死（最坏一轮 ≈ 20~30 次）
+/// ②跑前探一次余额（免费端点），低于 200 直接跳过。
+/// 返回结构化结果（通道 / 新增 / 这一轮真实请求数 / 池子前后），给界面与断言用。
+pub fn refill(conn: &Connection, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  ensure_social_tables(conn);
+  ensure_profile_tables(conn);
+  let ts = now_s();
+  let mut probe = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  probe.probe(emit);
+  if probe.core_left >= 0 && probe.core_left < 200 {
+    emit(format!("[refill] core 只剩 {}，本轮跳过（不冒险把配额用完）", probe.core_left));
+    return Ok(serde_json::json!({
+      "channel": "skip", "inserted": 0, "core_used": 0, "search_used": 0,
+      "note": format!("配额不足（core {}）", probe.core_left), "pool_before": 0, "pool_after": 0,
+    }));
+  }
+  let login = active_login(conn);
+  let before: i64 = conn.query_row("SELECT COUNT(1) FROM repo", [], |r| r.get(0)).unwrap_or(0);
+  let (calls0, search0) = http_calls();
+  let step: i64 = get_settings(conn)["refill_step"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
+  let channel = match step % 4 {
+    0 => "profile",
+    1 => "hot",
+    2 => "explore",
+    _ => "social",
+  };
+  emit(format!("[refill] 第 {} 步，通道 {channel}，@{}", step + 1, if login.is_empty() { "(未登录)" } else { &login }));
+  match channel {
+    "profile" => {
+      // 画像：原料先重建（含行为种子），再跑一轮多措辞检索
+      let _ = build_profile(conn, &login, 1, emit);
+      let _ = run_profile_search(conn, &login, emit);
+    }
+    "hot" => {
+      let _ = run_collect(conn, 1, 6, emit);
+    }
+    "explore" => {
+      let _ = run_explore(conn, 1, emit);
+    }
+    _ => {
+      let _ = run_social(conn, &login, 20, emit);
+    }
+  }
+  apply_rules(conn);
+  // 顺手补几条曲线：没有斜率的热度候选排序时会被 ×0.75，长期没人测就等于永远不上榜
+  let _ = measure_top(conn, 6, emit);
+  let after: i64 = conn.query_row("SELECT COUNT(1) FROM repo", [], |r| r.get(0)).unwrap_or(0);
+  let (calls1, search1) = http_calls();
+  let core_used = calls1 - calls0;
+  let search_used = search1 - search0;
+  let inserted = (after - before).max(0);
+  conn
+    .execute(
+      "INSERT INTO refill_log(at, step, channel, core_used, search_used, inserted, note) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+      params![ts, step, channel, core_used, search_used, inserted, format!("池子 {before} → {after}")],
+    )
+    .ok();
+  set_setting(conn, "refill_step", &(step + 1).to_string()).ok();
+  let note = format!("{channel}：请求 core {core_used} / search {search_used}，池子 {before} → {after}");
+  emit(format!("[refill] {note}"));
+  Ok(serde_json::json!({
+    "channel": channel, "inserted": inserted, "core_used": core_used, "search_used": search_used,
+    "note": note, "pool_before": before, "pool_after": after,
+  }))
+}
+
+/// 补货状态：给界面看的（池子多大、上次什么时候补的、各通道多少）
+pub fn refill_status(conn: &Connection) -> serde_json::Value {
+  ensure_social_tables(conn);
+  let pool: i64 = conn.query_row("SELECT COUNT(1) FROM repo", [], |r| r.get(0)).unwrap_or(0);
+  let last: Vec<serde_json::Value> = {
+    let mut st = match conn.prepare("SELECT at, step, channel, core_used, search_used, inserted FROM refill_log ORDER BY id DESC LIMIT 5") {
+      Ok(s) => s,
+      Err(_) => return serde_json::json!({ "pool": pool, "last": [], "enabled": false }),
+    };
+    let v: Vec<serde_json::Value> = st
+      .query_map([], |r| {
+        Ok(serde_json::json!({
+          "at": r.get::<_, i64>(0)?, "step": r.get::<_, i64>(1)?, "channel": r.get::<_, String>(2)?,
+          "core_used": r.get::<_, i64>(3)?, "search_used": r.get::<_, i64>(4)?, "inserted": r.get::<_, i64>(5)?,
+        }))
+      })
+      .map(|rows| rows.filter_map(|x| x.ok()).collect())
+      .unwrap_or_default();
+    v
+  };
+  let s = get_settings(conn);
+  serde_json::json!({
+    "pool": pool,
+    "last": last,
+    "enabled": s["refill_on"].as_str().unwrap_or("1") == "1",
+    "next_step": s["refill_step"].as_str().and_then(|x| x.parse::<i64>().ok()).unwrap_or(0),
+    "social_sources": conn.query_row("SELECT COUNT(1) FROM social_cache WHERE weight > 0", [], |r| r.get::<_, i64>(0)).unwrap_or(0),
+    "profile_terms": conn.query_row("SELECT COUNT(1) FROM profile_term", [], |r| r.get::<_, i64>(0)).unwrap_or(0),
+  })
 }
 
 /// 两级漏斗的完整版：先粗排，再对跨通道的前 n 名补测 star 曲线。
@@ -1971,6 +2435,28 @@ pub fn active_login(conn: &Connection) -> String {
   }
 }
 
+/// 通用认证探针（CLI 用）：带**当前账号**的 token 打一个任意路径，返回 (状态码, 响应体)。
+/// 存在的意义是把"端点不给 / 我们的凭据或参数不对"这类二分问题当场排掉——猜是没用的。
+/// 实测案例：`/repos/{o}/{r}/stargazers` 匿名 401，而我们带 token 时拿到 404，方向反了。
+pub fn probe_get(path: &str, accept: &str) -> Result<(u16, String), String> {
+  let mut req = G!(&format!("{API}{path}")).header("User-Agent", UA).header("Accept", accept);
+  if let Ok(conn) = open_db() {
+    if let Some(t) = token_for(&conn) {
+      req = req.header("Authorization", format!("Bearer {t}"));
+    }
+  }
+  match req.call() {
+    Ok(mut r) => {
+      let code = r.status().as_u16();
+      use std::io::Read;
+      let mut buf = String::new();
+      r.body_mut().as_reader().read_to_string(&mut buf).map_err(|e| e.to_string())?;
+      Ok((code, buf))
+    }
+    Err(e) => Err(e.to_string()),
+  }
+}
+
 
 // ================================================================ 代理支持
 // 实测：api.github.com 可直连，但 github.com（设备码端点、徽章图片）在本机直连是被重置的，
@@ -2237,13 +2723,17 @@ pub fn accounts_json() -> serde_json::Value {
 /// 否则用户点进"探索"才知道是空的 —— 那是浪费他一次点击。
 pub fn channel_counts(conn: &Connection) -> serde_json::Value {
   ensure_event_tables(conn);
+  ensure_social_tables(conn);
   let q = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap_or(0) };
   serde_json::json!({
     "all": q("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL"),
     "hot": q("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL AND window_kind LIKE 'born%'"),
     "profile": q("SELECT COUNT(1) FROM feed_hit WHERE channel='profile'"),
+    "social": q("SELECT COUNT(1) FROM feed_hit WHERE channel='social'"),
     "explore": q("SELECT COUNT(1) FROM repo WHERE window_kind='explore'"),
     "saved": q("SELECT COUNT(1) FROM saved"),
-    "last_collect": conn.query_row("SELECT MAX(ran_at) FROM query_log", [], |r| r.get::<_, Option<i64>>(0)).ok().flatten().unwrap_or(0)
+    "pool": q("SELECT COUNT(1) FROM repo"),
+    "last_collect": conn.query_row("SELECT MAX(ran_at) FROM query_log", [], |r| r.get::<_, Option<i64>>(0)).ok().flatten().unwrap_or(0),
+    "last_refill": conn.query_row("SELECT MAX(at) FROM refill_log", [], |r| r.get::<_, Option<i64>>(0)).ok().flatten().unwrap_or(0)
   })
 }
