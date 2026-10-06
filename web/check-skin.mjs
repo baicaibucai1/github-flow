@@ -179,6 +179,16 @@ const CHECKS = [
     what: "代码预览有护栏：二进制不塞进界面、行数封顶、被截断要说",
     pass: /binary/.test(treex) && /MAX_LINES|slice\(0,\s*\d+\)/.test(treex) && /truncated/.test(treex),
   },
+  {
+    id: "tree-look",
+    what: "树是 IDE 侧栏那种摆法：行上没有通栏分隔线、缩进有 1px 引导线、选中态是左侧主色条（不是把原文加粗当选中）",
+    pass: (() => {
+      // 只查"行"那一串 class：预览区的脚注该有 border-t，那是另一回事
+      const rowBase = (treex.match(/const rowBase\s*=\s*\n?\s*"([^"]+)"/) || [])[1] ?? "";
+      return rowBase.length > 0 && !rowBase.includes("border-b") &&
+        /border-s border-border/.test(treex) && /w-0\.5[\s\S]{0,40}bg-primary/.test(treex) && /h-7/.test(treex);
+    })(),
+  },
 ];
 
 let pass = 0;

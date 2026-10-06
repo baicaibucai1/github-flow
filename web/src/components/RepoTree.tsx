@@ -72,6 +72,7 @@ export type RepoFiles = {
   fileBusy: boolean;
   pick: (p: string) => void;
   backToReadme: () => void;
+  collapseAll: () => void;
 };
 
 /**
@@ -150,35 +151,75 @@ export function useRepoFiles(repoId: number, enabled = true): RepoFiles {
     setFile(null);
   };
 
-  return { nodes, branch, count, truncated, busy, err, expanded, toggleDir, sel, file, fileBusy, pick, backToReadme };
+  const collapseAll = () => setExpanded(new Set());
+
+  return {
+    nodes,
+    branch,
+    count,
+    truncated,
+    busy,
+    err,
+    expanded,
+    toggleDir,
+    sel,
+    file,
+    fileBusy,
+    pick,
+    backToReadme,
+    collapseAll,
+  };
 }
 
-/** 右栏那棵树：点目录展开、点文件交给上层把左栏切成预览。 */
+/** 右栏那棵树：点目录展开、点文件交给上层把左栏切成预览。
+ *
+ * ⚠️ 视觉决策（他 2026-10-06 说"这个文件树很丑，稍微做一点布局设计"之后定的，别再退回表格摆法）：
+ * 之前每行一条通栏分隔线 + 尺寸列带竖线，整体读起来是账本。现在按 IDE 侧栏那种树的规矩来：
+ * ① **没有任何行线**，靠 hover 底色和缩进引导线表达结构；② 缩进 14px 一级、每级一条 1px 引导线
+ * （层级靠这个看得出来，而不是靠缩进量硬猜）；③ 选中态是"底色 + 左侧 2px 主色条"，不是加粗原文；
+ * ④ 行高固定 28px、图标 14px、尺寸 11px 右对齐且不带分隔线。行高与图标统一是"看起来整"的前提。
+ */
 export function RepoTreeBox({ f, maxH = "44vh" }: { f: RepoFiles; maxH?: string }) {
+  const guides = (depth: number) =>
+    Array.from({ length: depth }).map((_, i) => (
+      <span key={i} className="w-3.5 shrink-0 self-stretch border-s border-border/60" aria-hidden />
+    ));
+
+  const rowBase =
+    "relative flex h-7 w-full items-center gap-1.5 rounded-sm ps-1.5 pe-1 text-start text-caption hover:bg-secondary";
+
   const renderNodes = (ns: Node[], depth: number): ReactElement[] =>
     ns.flatMap((n) => {
+      const isSel = !n.dir && n.path === f.sel;
       const row = (
         <button
           key={n.path}
+          title={n.path}
           onClick={() => (n.dir ? f.toggleDir(n.path) : f.pick(n.path))}
           className={cn(
-            "flex w-full items-center gap-2xs border-b py-2xs text-start text-caption hover:bg-secondary",
-            !n.dir && n.path === f.sel && "bg-secondary font-semibold"
+            rowBase,
+            isSel && "bg-secondary font-semibold",
+            n.dir && "font-medium",
+            !n.dir && n.name.startsWith(".") && !isSel && "text-muted-foreground"
           )}
-          style={{ paddingLeft: 8 + depth * 14 }}
         >
+          {isSel ? <span className="absolute inset-y-0 start-0 w-0.5 rounded-full bg-primary" aria-hidden /> : null}
+          {guides(depth)}
           {n.dir ? (
             <>
-              <ChevronRightIcon className={cn("size-3.5 shrink-0 transition-transform", f.expanded.has(n.path) && "rotate-90")} />
+              <ChevronRightIcon
+                className={cn("size-3 shrink-0 text-muted-foreground transition-transform", f.expanded.has(n.path) && "rotate-90")}
+              />
               <FolderIcon className="size-3.5 shrink-0 text-primary" />
-              <span className="truncate font-semibold">{n.name}</span>
+              <span className="truncate">{n.name}</span>
             </>
           ) : (
             <>
-              <span className="w-3.5 shrink-0" />
+              {/* 文件不占箭头那一格会跟目录名错位，所以留同样宽的空 */}
+              <span className="w-3 shrink-0" />
               <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate">{n.name}</span>
-              <span className="ms-auto shrink-0 pe-sm text-muted-foreground tabular-nums">{fmtSize(n.size)}</span>
+              <span className="ms-auto shrink-0 text-[11px] text-muted-foreground tabular-nums">{fmtSize(n.size)}</span>
             </>
           )}
         </button>
@@ -186,14 +227,28 @@ export function RepoTreeBox({ f, maxH = "44vh" }: { f: RepoFiles; maxH?: string 
       return n.dir && f.expanded.has(n.path) ? [row, ...renderNodes(n.children, depth + 1)] : [row];
     });
 
+  const anyOpen = f.expanded.size > 0;
   return (
-    <Box title="文件" aside={<Badge variant="outline">{f.branch}</Badge>}>
-      <div style={{ maxHeight: maxH, overflow: "auto" }}>
+    <Box
+      title="文件"
+      aside={
+        <span className="flex items-center gap-xs">
+          {f.count ? <span className="tabular-nums">{f.count.toLocaleString()} 项</span> : null}
+          <Badge variant="outline">{f.branch}</Badge>
+          {anyOpen ? (
+            <Button size="xs" variant="ghost" onClick={f.collapseAll}>
+              全部收起
+            </Button>
+          ) : null}
+        </span>
+      }
+    >
+      <div className="px-1 py-1" style={{ maxHeight: maxH, overflow: "auto" }}>
         {f.busy ? (
-          [0, 1, 2, 3, 4].map((i) => (
-            <BoxRow key={i} className="py-sm">
-              <Skeleton className="h-3.5 w-2/3" />
-            </BoxRow>
+          [0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex h-7 items-center px-1.5">
+              <Skeleton className="h-3.5" style={{ width: `${72 - i * 6}%` }} />
+            </div>
           ))
         ) : f.err ? (
           <BoxEmpty>{f.err}</BoxEmpty>
@@ -203,7 +258,7 @@ export function RepoTreeBox({ f, maxH = "44vh" }: { f: RepoFiles; maxH?: string 
           <>
             {renderNodes(f.nodes, 0)}
             {f.truncated ? (
-              <div className="border-t px-md py-sm text-caption text-muted-foreground">
+              <div className="px-1.5 py-sm text-caption text-muted-foreground">
                 条目过多，只拿到前 {f.count.toLocaleString()} 条（已截断）；完整树请看 GitHub。
               </div>
             ) : null}
