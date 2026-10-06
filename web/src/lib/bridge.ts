@@ -110,6 +110,24 @@ export type DevicePoll = {
   hint?: string;
 };
 
+/** Rust 侧 auth_status 的返回：/rate_limit 不计配额，所以这个可以常刷 */
+export type Pool = { limit: number; remaining: number; resets_at: number };
+export type AuthStatus = {
+  authed: boolean;
+  invalid?: boolean;
+  login: string;
+  mode: string;
+  scopes: string;
+  missing_scope?: string[];
+  core?: Pool;
+  search?: Pool;
+  graphql?: Pool;
+  accounts: number;
+  cred_file?: string;
+  error?: string;
+  hint?: string;
+};
+
 /** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */
 export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Badge,
   Button,
   Input,
@@ -15,7 +18,7 @@ import {
   type DevicePoll,
   type DeviceStart,
 } from "../lib/bridge";
-import { useStore } from "../lib/store";
+import { bumpFeed, notice, persist, reloadAll, useApp } from "../lib/store";
 
 const SECTIONS = [
   { value: "look", label: "外观" },
@@ -33,44 +36,33 @@ const SETS: [string, string][] = [
 ];
 
 export type SettingsViewProps = {
-  onNotice: (msg: string) => void;
+  tab: string;
+  onTab: (t: string) => void;
   onJump: (channel: string) => void;
-  onChanged: () => void;
 };
 
-export function SettingsView({ onNotice, onJump, onChanged }: SettingsViewProps) {
-  const { settings, setSetting } = useStore();
-  const [tab, setTab] = useState("look");
-
+export function SettingsView({ tab, onTab, onJump }: SettingsViewProps) {
   return (
     <div className="p-md">
       <SettingsPage
         nav={SECTIONS}
         value={tab}
-        onValueChange={setTab}
+        onValueChange={onTab}
         header={{
           title: "设置",
-          description: "全部存在本机：设置写在 SQLite 的 setting 表，token 单独存 accounts.json，不进数据库。",
+          description:
+            "全部存本机：设置与行为在 SQLite，凭据单独存 accounts.json、不进数据库。改完不需要重启，除了代理。",
         }}
       >
-        {tab === "look" ? <Look settings={settings} setSetting={setSetting} /> : null}
-        {tab === "acct" ? (
-          <Accounts onNotice={onNotice} onJump={onJump} onChanged={onChanged} />
-        ) : null}
-        {tab === "net" ? <Net settings={settings} setSetting={setSetting} /> : null}
-        {tab === "tr" ? (
-          <Translate settings={settings} setSetting={setSetting} onChanged={onChanged} />
-        ) : null}
-        {tab === "data" ? <Data onNotice={onNotice} onChanged={onChanged} /> : null}
+        {tab === "look" ? <Look /> : null}
+        {tab === "acct" ? <Accounts onJump={onJump} /> : null}
+        {tab === "net" ? <Net /> : null}
+        {tab === "tr" ? <Translate /> : null}
+        {tab === "data" ? <Data /> : null}
       </SettingsPage>
     </div>
   );
 }
-
-type SubProps = {
-  settings: ReturnType<typeof useStore>["settings"];
-  setSetting: (k: string, v: string) => void;
-};
 
 function Seg({
   value,
@@ -97,9 +89,10 @@ function Seg({
   );
 }
 
-function Look({ settings, setSetting }: SubProps) {
+function Look() {
+  const { settings } = useApp();
   return (
-    <SettingsSection title="外观" description="配色只换语义色的值，不换名字。">
+    <SettingsSection title="外观" description="配色只换语义色的值，不换名字（@soda/theme）。">
       <SettingsRow
         label="明暗"
         description="浅色为默认；深色是同一套变量的一层覆盖。"
@@ -111,18 +104,18 @@ function Look({ settings, setSetting }: SubProps) {
               ["dark", "黑"],
               ["system", "跟随系统"],
             ]}
-            onPick={(v) => setSetting("theme", v)}
+            onPick={(v) => persist("theme", v)}
           />
         }
       />
       <SettingsRow
         label="主题集"
-        description="@soda/theme 的四套预置。选一套即定死，不做运行时混搭。"
+        description="四套预置选一整套，不做运行时混搭。"
         control={
           <Seg
             value={settings.set ?? "ink"}
             options={SETS}
-            onPick={(v) => setSetting("set", v)}
+            onPick={(v) => persist("set", v)}
           />
         }
       />
@@ -136,7 +129,7 @@ function Look({ settings, setSetting }: SubProps) {
               ["zh-CN", "简体中文"],
               ["en", "English"],
             ]}
-            onPick={(v) => setSetting("lang", v)}
+            onPick={(v) => persist("lang", v)}
           />
         }
       />
@@ -144,44 +137,72 @@ function Look({ settings, setSetting }: SubProps) {
   );
 }
 
-function Net({ settings, setSetting }: SubProps) {
-  const [proxy, setProxy] = useState(settings.proxy_url ?? "");
-  useEffect(() => setProxy(settings.proxy_url ?? ""), [settings.proxy_url]);
+function TextRow({
+  label,
+  description,
+  keyName,
+  placeholder,
+  password,
+}: {
+  label: React.ReactNode;
+  description: React.ReactNode;
+  keyName: string;
+  placeholder?: string;
+  password?: boolean;
+}) {
+  const { settings } = useApp();
+  const [v, setV] = useState(settings[keyName] ?? "");
+  // 设置从 Rust 读回来后要把输入框对齐，否则用户看到的是上一次的空值
+  useEffect(() => setV(settings[keyName] ?? ""), [settings, keyName]);
+  return (
+    <SettingsRow
+      label={label}
+      description={description}
+      control={
+        <div className="flex items-center gap-2xs">
+          <Input
+            type={password ? "password" : "text"}
+            value={v}
+            placeholder={placeholder}
+            className="w-64"
+            onChange={(e) => setV(e.target.value)}
+            onBlur={() => {
+              if (v !== (settings[keyName] ?? "")) persist(keyName, v.trim());
+            }}
+          />
+          <Button size="xs" variant="outline" onClick={() => persist(keyName, v.trim())}>
+            保存
+          </Button>
+        </div>
+      }
+    />
+  );
+}
+
+function Net() {
   return (
     <SettingsSection title="网络">
-      <SettingsRow
+      <TextRow
         label="HTTP 代理"
         description={
           <>
-            留空＝直连。实测这台机器 <code>api.github.com</code> 可直连，但{" "}
-            <code>github.com</code>（设备码端点、部分徽章图）直连会被重置，必须走代理。格式如{" "}
+            留空＝直连。这台机器上 <code>api.github.com</code> 实测可直连；{" "}
+            <code>github.com</code>（设备码端点、部分徽章图）有时会被重置，那时才需要代理。格式如{" "}
             <code>http://127.0.0.1:7890</code>。
             <b>改完要重启应用才生效</b> —— 连接池在进程启动时建好。
+            <br />
+            注意：代理没开着时这里填着地址，会让所有联网功能静默失败（界面还是照常显示本地数据）。
           </>
         }
-        control={
-          <div className="flex items-center gap-2xs">
-            <Input
-              value={proxy}
-              placeholder="留空即直连"
-              className="w-56"
-              onChange={(e) => setProxy(e.target.value)}
-              onBlur={() => setSetting("proxy_url", proxy.trim())}
-            />
-            <Button size="xs" variant="outline" onClick={() => setSetting("proxy_url", proxy.trim())}>
-              保存
-            </Button>
-          </div>
-        }
+        keyName="proxy_url"
+        placeholder="留空即直连"
       />
     </SettingsSection>
   );
 }
 
-function Translate({ settings, setSetting, onChanged }: SubProps & { onChanged: () => void }) {
-  const [url, setUrl] = useState(settings.translate_url ?? "");
-  useEffect(() => setUrl(settings.translate_url ?? ""), [settings.translate_url]);
-  const on = settings.translate_on === "1";
+function Translate() {
+  const { settings } = useApp();
   return (
     <SettingsSection title="翻译">
       <SettingsRow
@@ -194,43 +215,45 @@ function Translate({ settings, setSetting, onChanged }: SubProps & { onChanged: 
         }
         control={
           <Switch
-            checked={on}
+            checked={settings.translate_on === "1"}
             onCheckedChange={(v) => {
-              setSetting("translate_on", v ? "1" : "0");
-              if (v) onChanged();
+              persist("translate_on", v ? "1" : "0");
+              if (v) bumpFeed();
             }}
           />
         }
       />
-      <SettingsRow
+      <TextRow
         label="翻译端点"
         description={
           <>
-            当前用 MyMemory（免密钥、按字符限额）。已翻过的内容会存进本地{" "}
-            <code>translation</code> 表，同一段话不会重复请求。
+            当前用 MyMemory（免密钥、按字符限额）。已翻过的内容存进本地 <code>translation</code>{" "}
+            表，同一段话不会重复请求。
           </>
         }
-        control={
-          <Input
-            value={url}
-            className="w-72"
-            onChange={(e) => setUrl(e.target.value)}
-            onBlur={() => setSetting("translate_url", url.trim())}
-          />
-        }
+        keyName="translate_url"
       />
     </SettingsSection>
   );
 }
 
-function Data({ onNotice, onChanged }: { onNotice: (m: string) => void; onChanged: () => void }) {
-  const { stats } = useStore();
+function Data() {
+  const { stats, auth } = useApp();
   const [busy, setBusy] = useState("");
+
+  const run = (label: string, p: Promise<unknown>, done: string) => {
+    setBusy(label);
+    void p
+      .then(() => reloadAll().then(bumpFeed))
+      .then(() => notice(done))
+      .catch((e) => notice(`${label}失败：` + String(e)))
+      .finally(() => setBusy(""));
+  };
 
   return (
     <SettingsSection
       title="数据"
-      description="一次完整采集约 60~90 次请求，认证态配额 5000 次/小时，匿名只有 60 次/小时。"
+      description="一次完整采集约 60~90 次请求。认证态配额 5000 次/小时，匿名 60 次/小时。"
     >
       <SettingsRow
         label="立即采集"
@@ -239,40 +262,11 @@ function Data({ onNotice, onChanged }: { onNotice: (m: string) => void; onChange
           <Button
             size="xs"
             disabled={!!busy}
-            onClick={() => {
-              setBusy("collect");
-              void call("run_collect", { pages: 1, curveN: 12 })
-                .then(() => {
-                  onNotice("采集完成");
-                  onChanged();
-                })
-                .catch((e) => onNotice("采集失败：" + String(e)))
-                .finally(() => setBusy(""));
-            }}
+            onClick={() =>
+              run("采集", Promise.all([call("run_collect", { pages: 1, curveN: 12 }), call("do_explore", { perLang: 2 })]), "采集完成，榜已更新")
+            }
           >
-            {busy === "collect" ? "采集中…" : "开始采集"}
-          </Button>
-        }
-      />
-      <SettingsRow
-        label="取一批新生项目"
-        description="探索通道：给推送掺入你还没见过的方向（ε-greedy）。"
-        control={
-          <Button
-            size="xs"
-            disabled={!!busy}
-            onClick={() => {
-              setBusy("explore");
-              void call("do_explore", { perLang: 2 })
-                .then((m) => {
-                  onNotice(String(m));
-                  onChanged();
-                })
-                .catch((e) => onNotice("探索池失败：" + String(e)))
-                .finally(() => setBusy(""));
-            }}
-          >
-            {busy === "explore" ? "抓取中…" : "取一批"}
+            {busy === "采集" ? "采集中…" : "开始采集"}
           </Button>
         }
       />
@@ -283,44 +277,36 @@ function Data({ onNotice, onChanged }: { onNotice: (m: string) => void; onChange
           <Button
             size="xs"
             disabled={!!busy}
-            onClick={() => {
-              setBusy("calib");
-              void call<string>("calibrate_now")
-                .then((m) => {
-                  onNotice(m);
-                  onChanged();
-                })
-                .catch((e) => onNotice("校准失败：" + String(e)))
-                .finally(() => setBusy(""));
-            }}
+            onClick={() => run("校准", call<string>("calibrate_now"), "已重新校准")}
           >
-            {busy === "calib" ? "校准中…" : "重新校准"}
+            {busy === "校准" ? "校准中…" : "重新校准"}
           </Button>
         }
       />
       <SettingsRow
         label="数据库"
-        description="全部数据都在这台机器上的这个文件里，没有任何一条离开本机（翻译是唯一例外）。"
-        control={<code className="text-caption">{stats?.db ?? "—"}</code>}
+        description="全部数据都在这台机器上，没有任何一条离开本机（翻译是唯一例外）。"
+        control={
+          <div className="flex flex-col items-end gap-2xs">
+            <code className="text-caption">{stats?.db ?? "—"}</code>
+            <Button size="xs" variant="ghost" onClick={() => reloadAll().then(bumpFeed)}>
+              重新读取
+            </Button>
+          </div>
+        }
       />
+      <p className="text-caption text-muted-foreground">
+        凭据文件：{auth?.cred_file ?? "accounts.json（本机）"}
+      </p>
     </SettingsSection>
   );
 }
 
-function Accounts({
-  onNotice,
-  onJump,
-  onChanged,
-}: {
-  onNotice: (m: string) => void;
-  onJump: (c: string) => void;
-  onChanged: () => void;
-}) {
-  const { settings, setSetting } = useStore();
+function Accounts({ onJump }: { onJump: (c: string) => void }) {
+  const { settings, auth } = useApp();
   const [list, setList] = useState<Account[]>([]);
   const [tok, setTok] = useState("");
   const [busy, setBusy] = useState("");
-  const [devOpen, setDevOpen] = useState(false);
   const [dev, setDev] = useState<DeviceStart | null>(null);
   const [devState, setDevState] = useState("");
   const poll = useRef<{ code: string; interval: number; deadline: number } | null>(null);
@@ -370,24 +356,54 @@ function Accounts({
         }
         stopPoll("已登录 @" + r.login);
         log("login ok " + r.login);
-        onNotice(`登录成功：@${r.login} —— 现在点「用我自己的口味建画像」`);
         void refresh();
-        onChanged();
+        void reloadAll();
+        notice(`登录成功：@${r.login} —— 现在点「用我自己的口味建画像」`);
       })
       .catch((e) => stopPoll("轮询出错：" + String(e)));
   };
 
+  const invalid = !!auth?.invalid;
+  const missing = auth?.missing_scope ?? [];
+
   return (
     <SettingsSection
       title="账号"
-      description="不登录也能用：走匿名配额（60 次/小时），只是没有你的画像。"
+      description="不登录也能用：走匿名配额，只是没有你的画像。登录只为本机记账，不上传任何东西。"
     >
+      {auth && auth.authed ? (
+        <Alert variant={invalid || missing.length ? "destructive" : "default"}>
+          <AlertTitle>
+            已登录 @{auth.login}（{auth.mode === "pat" ? "粘贴的 token" : "设备码"}）
+          </AlertTitle>
+          <AlertDescription>
+            配额 core {auth.core?.remaining ?? "?"}/{auth.core?.limit ?? "?"} · search{" "}
+            {auth.search?.remaining ?? "?"}/{auth.search?.limit ?? "?"} · GraphQL{" "}
+            {auth.graphql?.remaining ?? "?"}
+            <br />
+            scope：{auth.scopes || "GitHub 没回报（fine-grained token 不返回 scope）"}
+            {missing.length ? ` —— 缺 ${missing.join("、")}，画像可能抓不全` : ""}
+            {invalid ? " —— 这个凭据已被撤销或过期，删掉重新登录" : ""}
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <AlertTitle>本机没有凭据，现在是匿名态</AlertTitle>
+          <AlertDescription>
+            配额 core {auth?.core?.remaining ?? "?"}/{auth?.core?.limit ?? "60"} 次/小时 · search{" "}
+            {auth?.search?.remaining ?? "?"}。
+            热度与探索照常跑，「画像」通道需要读你自己的收藏，所以是空的。
+            {auth?.error ? ` （读配额失败：${auth.error}）` : ""}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap gap-2xs">
         {list.length === 0 ? (
-          <Badge variant="outline">当前没有登录任何账号</Badge>
+          <Badge variant="outline">账号列表是空的</Badge>
         ) : (
           list.map((a) => {
-            const active = a.login === settings.active_login;
+            const active = a.login === settings.active_login || list.length === 1;
             return (
               <Badge key={a.login} variant={active ? "default" : "outline"}>
                 {active ? "●" : "○"} {a.login} · {a.mode === "pat" ? "PAT" : "OAuth"} ·{" "}
@@ -397,33 +413,30 @@ function Accounts({
                     className="underline"
                     onClick={() =>
                       void call("account_activate", { login: a.login })
-                        .then(() => {
-                          void refresh();
-                          onChanged();
-                        })
-                        .catch((e) => onNotice("切换失败：" + String(e)))
+                        .then(reloadAll)
+                        .then(refresh)
+                        .catch((e) => notice("切换失败：" + String(e)))
                     }
                   >
                     切换
                   </button>
                 ) : null}
-                {list.length > 1 ? (
-                  <button
-                    className="inline-flex items-center gap-2xs underline"
-                    onClick={() =>
-                      void call("account_remove", { login: a.login })
-                        .then(() => {
-                          log("remove " + a.login);
-                          void refresh();
-                          onChanged();
-                        })
-                        .catch((e) => onNotice("删除失败：" + String(e)))
-                    }
-                  >
-                    <Trash2Icon />
-                    删除
-                  </button>
-                ) : null}
+                <button
+                  className="inline-flex items-center gap-2xs underline"
+                  title="从本机移除这个凭据"
+                  onClick={() =>
+                    void call("account_remove", { login: a.login })
+                      .then(() => {
+                        log("remove " + a.login);
+                        notice(`已移除 @${a.login} 的凭据`);
+                        return Promise.all([refresh(), reloadAll()]);
+                      })
+                      .catch((e) => notice("删除失败：" + String(e)))
+                  }
+                >
+                  <Trash2Icon />
+                  删除
+                </button>
               </Badge>
             );
           })
@@ -435,14 +448,14 @@ function Accounts({
       <SettingsRow
         label={
           <span className="flex items-center gap-2xs">
-            <KeyRoundIcon /> ① 粘贴 token 登录（推荐，约 30 秒）
+            <KeyRoundIcon /> ① 粘贴 token 登录（约 30 秒）
           </span>
         }
         description={
           <>
             到 <code>github.com/settings/tokens</code> 建一个 classic token，只勾{" "}
             <code>read:user</code> 和 <code>public_repo</code>（不要勾 repo，就不碰你的私有代码），
-            复制粘贴进来。配额立刻从匿名 60 次/小时变成 5000 次/小时。
+            粘贴进来。验证通过后 token 只写进本机 accounts.json，<b>不进数据库、不会出现在界面上</b>。
           </>
         }
         control={
@@ -459,38 +472,38 @@ function Accounts({
               disabled={!!busy}
               onClick={() => {
                 const val = tok.trim();
-                setBusy("tok");
                 if (!val) {
-                  void call("set_token_cmd", { token: "" })
-                    .then(() => {
-                      onNotice("输入框已清空。要真正移除凭据，请在上方账号列表里点「删除」。");
-                      void refresh();
-                    })
-                    .finally(() => setBusy(""));
+                  notice("先粘贴 token。要移除已存的凭据，请在上方点「删除」。");
                   return;
                 }
+                setBusy("tok");
                 void call<{
                   login?: string;
+                  scopes?: string;
+                  missing_scope?: string[];
                   quota_limit?: number;
                   quota_remaining?: number;
                   error?: string;
                 }>("add_pat", { token: val })
-                  .then((r) => {
+                  .then(async (r) => {
                     if (r.error) {
-                      onNotice("token 验证失败：" + r.error + "（界面仍可用匿名额度）");
+                      notice("token 验证失败：" + r.error + "（界面仍可用匿名额度）");
                       return;
                     }
                     setTok("");
                     log("pat ok login=" + r.login);
-                    onNotice(
-                      `已验证 @${r.login}，配额 ${r.quota_limit ?? "?"} 次/小时（剩余 ${
-                        r.quota_remaining ?? "?"
-                      }）`
+                    notice(
+                      `已验证 @${r.login}：配额 ${r.quota_remaining ?? "?"}/${
+                        r.quota_limit ?? "?"
+                      } 次/小时${
+                        r.missing_scope?.length
+                          ? ` —— 但缺 ${r.missing_scope.join("、")}，回 GitHub 重新勾上`
+                          : ""
+                      }`
                     );
-                    void refresh();
-                    onChanged();
+                    await Promise.all([refresh(), reloadAll()]);
                   })
-                  .catch((e) => onNotice("保存失败：" + String(e)))
+                  .catch((e) => notice("保存失败：" + String(e)))
                   .finally(() => setBusy(""));
               }}
             >
@@ -506,24 +519,35 @@ function Accounts({
             <LogInIcon /> ② 设备码登录
           </span>
         }
-        description="只在要发布给别人用时才需要（先注册 OAuth App 并打开 Device Flow）。不需要回调地址、不把密钥打进应用里。"
-        control={<Button size="xs" variant="outline" onClick={() => setDevOpen((v) => !v)}>
-          {devOpen ? "收起" : "展开"}
-        </Button>}
+        description={
+          <>
+            要先发一个 OAuth App：<code>github.com/settings/developers</code> → New OAuth App →
+            建好后在页面底部勾上 <b>Allow device flow</b>（默认关），把 Client ID 填到下面。
+            不需要回调地址，也不把密钥打进应用里。
+          </>
+        }
+        control={
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              if (dev) {
+                setDev(null);
+                stopPoll("已收起");
+              } else setDevState(devState);
+            }}
+          >
+            {dev ? "收起" : "用设备码登录"}
+          </Button>
+        }
       />
-      {devOpen ? (
+      {dev || devState ? (
         <div className="flex flex-col gap-sm rounded-lg border p-md">
-          <SettingsRow
+          <TextRow
             label="OAuth App client_id"
             description="填一次即可，存本机设置表。"
-            control={
-              <Input
-                defaultValue={settings.client_id ?? ""}
-                placeholder="Iv1.xxxx 或 40 位十六进制"
-                className="w-72"
-                onBlur={(e) => setSetting("client_id", e.target.value.trim())}
-              />
-            }
+            keyName="client_id"
+            placeholder="Iv1.xxxx 或 40 位十六进制"
           />
           <div className="flex flex-wrap items-center gap-xs">
             <Button
@@ -553,7 +577,7 @@ function Accounts({
                   .catch((e) => setDevState("失败：" + String(e)));
               }}
             >
-              开始登录
+              申请一次性代码
             </Button>
             {poll.current ? (
               <Button size="xs" variant="ghost" onClick={() => stopPoll("已取消")}>
@@ -568,13 +592,13 @@ function Accounts({
                 在浏览器里打开{" "}
                 <a
                   className="text-primary underline"
-                  href={dev.verification_uri}
+                  href={dev.verification_uri_complete || dev.verification_uri}
                   target="_blank"
                   rel="noreferrer"
                 >
                   {dev.verification_uri}
                 </a>
-                ，输入这个一次性代码：
+                ，输入这个一次性代码（{Math.round((dev.expires_in || 900) / 60)} 分钟内有效）：
               </span>
               <span className="font-mono text-title tracking-widest">{dev.user_code}</span>
               <button
@@ -601,11 +625,12 @@ function Accounts({
               setBusy("mine");
               void call<string>("build_my_profile", { pages: 5 })
                 .then((m) => {
-                  onNotice("画像已按你自己的账号重建");
                   log("mine ok");
-                  onJump("profile");
+                  notice("画像已按你自己的账号重建");
+                  return reloadAll().then(bumpFeed);
                 })
-                .catch((e) => onNotice("建画像失败：" + String(e)))
+                .then(() => onJump("profile"))
+                .catch((e) => notice("建画像失败：" + String(e)))
                 .finally(() => setBusy(""));
             }}
           >
@@ -614,7 +639,9 @@ function Accounts({
         }
       />
       <p className="text-caption text-muted-foreground">
-        {list.length ? `当前生效：@${settings.active_login || "未选"}` : "匿名态：所有请求不带 token"}
+        {auth?.authed
+          ? `当前生效：@${auth.login}（${auth.mode}）`
+          : "匿名态：所有请求不带 token，也不会读你的私有数据"}
       </p>
     </SettingsSection>
   );

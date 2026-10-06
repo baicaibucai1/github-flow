@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { call, log, n, type Detail } from "../lib/bridge";
 import { logEvent } from "../lib/exposure";
-import { useStore } from "../lib/store";
+import { requestTranslate, setDbg, useApp, useDbg } from "../lib/store";
 
 const chartConfig = { stars: { label: "这一周新增 star", color: "var(--primary)" } };
 
@@ -40,7 +40,8 @@ export type DetailViewProps = {
 };
 
 export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
-  const { translated, requestTranslate, dbg, setDbg } = useStore();
+  const { translated } = useApp();
+  const dbg = useDbg();
   const [d, setD] = useState<Detail | null>(null);
   const [err, setErr] = useState("");
   const rdRef = useRef<HTMLDivElement | null>(null);

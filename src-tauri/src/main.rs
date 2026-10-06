@@ -142,23 +142,31 @@ fn open_in_app_window(app: tauri::AppHandle, url: String, repo_id: i64) -> Resul
 }
 
 #[tauri::command]
-fn set_token_cmd(token: String) -> Result<serde_json::Value, String> {
-  feed::store_token(&token).map_err(|e| e.to_string())?;
-  if token.trim().is_empty() { return Ok(serde_json::json!({"cleared": true})); }
-  Ok(feed::whoami(&mut |s| println!("{s}")))
+fn auth_status() -> Result<serde_json::Value, String> {
+  // Rust 侧的话也写进同一份磁盘日志，否则 GUI 里 println 出来的东西没人看得见
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::auth_status(&mut sink)
 }
 
 #[tauri::command]
 fn build_my_profile(pages: Option<i64>) -> Result<String, String> {
   let conn = feed::open_db()?;
-  let login = feed::active_login(&conn);
-  if login.is_empty() { return Err("还没验证过账号".into()); }
+  // 必须以"真的带着 token 的那个账号"的身份来建。用 active_login() 会退回 profile_term 里的
+  // 词表归属，而那是原型阶段借来的公开账号——用户点"按我自己的口味建画像"却建出陌生人的画像，
+  // 而且匿名态读公开的 starred 连报错都不会有，错得很安静。
+  let acct = feed::current_acct(&conn).ok_or("还没有带 token 的账号：先去「设置 → 账号」登录")?;
+  let login = acct.login;
   let mut log = String::new();
-  for step in [
-    feed::build_profile(&conn, &login, pages.unwrap_or(5), &mut |s| println!("{s}")),
-    feed::run_profile_search(&conn, &login, &mut |s| println!("{s}")),
-    feed::measure_top(&conn, 40, &mut |s| println!("{s}")),
-  ] { log.push_str(&step?); log.push('\n'); }
+  let mut sink = |s: String| { let _ = js_log(s); };
+  let r1 = feed::build_profile(&conn, &login, pages.unwrap_or(5), &mut sink);
+  log.push_str(&r1?);
+  log.push('\n');
+  let r2 = feed::run_profile_search(&conn, &login, &mut sink);
+  log.push_str(&r2?);
+  log.push('\n');
+  let r3 = feed::measure_top(&conn, 40, &mut sink);
+  log.push_str(&r3?);
+  log.push('\n');
   let _ = feed::set_setting(&conn, "active_login", &login);
   Ok(log)
 }
@@ -199,7 +207,7 @@ fn main() {
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, set_token_cmd, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

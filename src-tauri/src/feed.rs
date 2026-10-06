@@ -1118,7 +1118,7 @@ pub fn get_settings(conn: &Connection) -> serde_json::Value {
                  ("proxy_url", ""), ("active_login", "")] {
     if !m.contains_key(k) { m.insert(k.into(), serde_json::Value::String(v.into())); }
   }
-  m.insert("has_token".into(), serde_json::Value::Bool(load_token().is_some()));
+  m.insert("has_token".into(), serde_json::Value::Bool(!load_accounts().is_empty()));
   serde_json::Value::Object(m)
 }
 
@@ -1297,24 +1297,13 @@ pub fn open_webview(app: &tauri::AppHandle, url: &str, repo_id: i64) -> Result<S
 }
 
 // ================================================================ 凭据与"用我自己的账号"
-// 原型阶段：token 单独存一个文件，不进 SQLite —— 这样把库文件拷走或发给别人调试，
-// 不会连带把凭据带出去。正式版本要换成系统钥匙串（Windows 凭据管理器 / Keychain / Secret Service），
-// 因为"同机同用户的攻击者能读你整个 AppData"这个威胁模型下，放文件并不比放库更安全。
-pub fn cred_path() -> String {
-  let dir = std::env::var("LOCALAPPDATA").or_else(|_| std::env::var("APPDATA")).unwrap_or_else(|_| ".".into());
-  format!("{dir}\\gh-feed\\cred.bin")
-}
-
-pub fn store_token(tok: &str) -> Result<(), String> {
-  let t = tok.trim();
-  if t.is_empty() { std::fs::remove_file(cred_path()).ok(); return Ok(()); }
-  if let Some(p) = std::path::Path::new(&cred_path()).parent() { std::fs::create_dir_all(p).ok(); }
-  std::fs::write(cred_path(), t.as_bytes()).map_err(|e| e.to_string())
-}
-
-pub fn load_token() -> Option<String> {
-  std::fs::read_to_string(cred_path()).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-}
+// token 只存 accounts.json，不进 SQLite —— 把库文件拷走或发给别人调试时不会连带把凭据带出去。
+// 正式版本要换成系统钥匙串（Windows 凭据管理器 / Keychain / Secret Service），因为
+// "同机同用户攻击者能读整个 AppData"这个威胁模型下，放文件并不比放库更安全。
+//
+// 这里曾经并存两条路：单 token 的 cred.bin（原型第一版）和账号表 accounts.json（多账号版）。
+// 后果是"界面上把账号删了，token 其实还在被 token_for 用"。删掉 cred.bin 这条路，
+// 账号表就是唯一真相；本机磁盘上原本也没有 cred.bin，不需要迁移。
 
 impl Http {
   fn authed(mut self) -> Self {
@@ -1323,44 +1312,78 @@ impl Http {
   }
 }
 
-/// 验证 token 并记下这是谁。顺便把真实额度读出来（认证态是 5000/h，之前只能按匿名算）
-pub fn whoami(emit: &mut dyn FnMut(String)) -> serde_json::Value {
-  let Some(tok) = load_token() else {
-    emit("[auth] 没有存过 token".into());
-    return serde_json::json!({ "error": "还没填 token" });
-  };
-  match G!(&format!("{API}/user"))
+/// 界面只问一句话：我现在是谁、还能发多少次请求、scope 够不够。
+/// `/rate_limit` 不计配额，所以这个可以随便刷；带 token 却回 401 就说明凭据已经失效。
+pub fn auth_status(emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let conn = open_db()?;
+  let list = load_accounts();
+  let acct = current_acct(&conn);
+  let who = acct.clone().map(|a| a.login).unwrap_or_default();
+
+  let mut req = G!(&format!("{API}/rate_limit"))
     .header("User-Agent", UA)
-    .header("Accept", "application/vnd.github+json")
-    .header("Authorization", format!("Bearer {tok}"))
-    .call()
-  {
+    .header("Accept", "application/vnd.github+json");
+  if let Some(a) = &acct { req = req.header("Authorization", format!("Bearer {}", a.token)); }
+
+  let mut hdr_scopes = String::new();
+  let v: serde_json::Value = match req.call() {
     Ok(mut r) => {
-      let v: serde_json::Value = r.body_mut().read_json().unwrap_or(serde_json::Value::Null);
-      let login = v["login"].as_str().unwrap_or("").to_string();
-      emit(format!("[auth] 验证通过：@{login}"));
-      let conn = match open_db() { Ok(c) => c, Err(e) => return serde_json::json!({"error": e}) };
-      ensure_profile_tables(&conn);
-      conn.execute(
-        "CREATE TABLE IF NOT EXISTS account(id INTEGER PRIMARY KEY, login TEXT, user_id INTEGER,
-           auth_mode TEXT, added_at INTEGER, last_used_at INTEGER, scopes TEXT)", []).ok();
-      conn.execute("INSERT OR REPLACE INTO account(id, login, user_id, auth_mode, added_at, last_used_at)
-                    VALUES(?1,?2,?3,'pat',?4,?4)",
-        params![1, login, v["id"].as_i64().unwrap_or(0), now_s()]).ok();
-      let _ = set_setting(&conn, "active_login", &login);
-      let rl: serde_json::Value = G!(&format!("{API}/rate_limit")).header("User-Agent", UA)
-        .header("Authorization", format!("Bearer {tok}")).call()
-        .and_then(|mut r| r.body_mut().read_json::<serde_json::Value>().map_err(ureq::Error::from))
-        .unwrap_or(serde_json::Value::Null);
-      let core = &rl["resources"]["core"];
-      emit(format!("[auth] 认证态配额：limit={} remaining={}",
-        core["limit"].as_i64().unwrap_or(-1), core["remaining"].as_i64().unwrap_or(-1)));
-      serde_json::json!({ "login": login, "id": v["id"], "public_repos": v["public_repos"],
-        "followers": v["followers"], "following": v["following"],
-        "quota_limit": core["limit"], "quota_remaining": core["remaining"] })
+      if let Some(s) = r.headers().get("x-oauth-scopes").and_then(|x| x.to_str().ok()) {
+        hdr_scopes = s.to_string();
+      }
+      r.body_mut().read_json().map_err(|e| e.to_string())?
     }
-    Err(e) => { emit(format!("[auth] 验证失败: {e}")); serde_json::json!({ "error": format!("{e}") }) }
-  }
+    Err(e) => {
+      let t = format!("{e}");
+      if t.contains("401") || t.contains("403") {
+        emit(format!("[auth] token 已失效: {t}"));
+        return Ok(serde_json::json!({
+          "authed": false, "invalid": true, "login": who,
+          "error": "凭据已被撤销或过期（GitHub 回 401/403）—— 删掉这个账号重新登录" }));
+      }
+      emit(format!("[auth] 读不到配额: {t}"));
+      return Ok(serde_json::json!({ "authed": acct.is_some(), "login": who, "error": t,
+        "hint": "读不到配额不等于没登录：可能是网络或代理不通" }));
+    }
+  };
+
+  let pool = |k: &str| serde_json::json!({
+    "limit": v["resources"][k]["limit"],
+    "remaining": v["resources"][k]["remaining"],
+    "resets_at": v["resources"][k]["reset"],
+  });
+  let scopes = if !hdr_scopes.is_empty() {
+    hdr_scopes
+  } else {
+    acct.clone().map(|a| a.scopes).unwrap_or_default()
+  };
+  emit(format!("[auth] {} login={} core={}/{}",
+    if acct.is_some() { "认证态" } else { "匿名态" },
+    if who.is_empty() { "-".to_string() } else { who.clone() },
+    v["resources"]["core"]["remaining"], v["resources"]["core"]["limit"]));
+  Ok(serde_json::json!({
+    "authed": acct.is_some(),
+    "login": who,
+    "mode": acct.clone().map(|a| a.auth_mode).unwrap_or_default(),
+    "scopes": scopes,
+    "missing_scope": missing_scopes(&scopes),
+    "core": pool("core"),
+    "search": pool("search"),
+    "graphql": pool("graphql"),
+    "accounts": list.len(),
+    "cred_file": accounts_path(),
+  }))
+}
+
+/// 画像回路要读你自己的收藏与仓库，这两个 scope 缺一个就会静默失败。
+/// fine-grained token 不回 scope，所以只提示、不拦。
+pub fn missing_scopes(scopes: &str) -> Vec<&'static str> {
+  if scopes.is_empty() { return Vec::new(); }
+  let has = |w: &str| scopes.split(',').any(|s| s.trim() == w);
+  let mut miss = Vec::new();
+  if !has("read:user") && !has("repo") { miss.push("read:user"); }
+  if !has("public_repo") && !has("repo") { miss.push("public_repo"); }
+  miss
 }
 
 pub fn active_login(conn: &Connection) -> String {
@@ -1494,18 +1517,29 @@ pub fn upsert_account(a: Acct) -> Result<(), String> {
 pub fn remove_account(login: &str) -> Result<(), String> {
   let mut list = load_accounts();
   list.retain(|x| x.login != login);
-  save_accounts(&list)
+  save_accounts(&list)?;
+  // 删掉的是当前生效的那个就必须把 active_login 清掉：否则"建我的画像"会拿一个
+  // 已经不存在的账号去跑，请求退回匿名额度，而词表写在那个 login 名下——静默错位。
+  let conn = open_db()?;
+  if active_login(&conn) == login { set_setting(&conn, "active_login", "")?; }
+  Ok(())
 }
 
-/// 当前生效的 token：优先按 active_login 匹配；没设过就用唯一的那个；再退回旧的 cred.bin
-pub fn token_for(conn: &Connection) -> Option<String> {
-  let active = get_settings(conn).get("active_login").and_then(|v| v.as_str()).unwrap_or("").to_string();
+/// 当前真正带着 token 的账号：优先按 active_login 匹配；没设过就用唯一的那个。
+/// 账号表是唯一真相——别再往回退路径上加第二个凭据文件。
+/// 注意这跟 `active_login()` 不是一回事：后者会退回 profile_term 里的词表归属，
+/// 那个 login 可能根本没有对应凭据（借来的公开账号就是这种）。
+pub fn current_acct(conn: &Connection) -> Option<Acct> {
   let list = load_accounts();
-  if !active.is_empty() {
-    if let Some(a) = list.iter().find(|x| x.login == active) { return Some(a.token.clone()); }
-  }
-  if list.len() == 1 { return Some(list[0].token.clone()); }
-  load_token()
+  let want = get_settings(conn).get("active_login")
+    .and_then(|v| v.as_str()).unwrap_or("").to_string();
+  if let Some(a) = list.iter().find(|x| x.login == want) { return Some(a.clone()); }
+  if list.len() == 1 { return list.first().cloned(); }
+  None
+}
+
+pub fn token_for(conn: &Connection) -> Option<String> {
+  current_acct(conn).map(|a| a.token)
 }
 
 // ---------- 设备码流程（RFC 8628 的形状，GitHub 的实现）
@@ -1583,15 +1617,22 @@ pub fn device_poll(client_id: &str, device_code: &str) -> Result<serde_json::Val
 pub fn add_pat_account(tok: &str) -> Result<serde_json::Value, String> {
   let tok = tok.trim();
   if tok.is_empty() { return Err("token 为空".into()); }
-  let who = G!(&format!("{API}/user"))
+  // x-oauth-scopes 是 GitHub 在认证响应头里回报的真实作用域。存下来才有"这个 token
+  // 够不够建画像"可判读——只凭他创建时勾了什么记，回头对不上。
+  let (who, scopes) = G!(&format!("{API}/user"))
     .header("User-Agent", UA).header("Accept", "application/vnd.github+json")
     .header("Authorization", format!("Bearer {tok}"))
-    .call().map(|mut r| r.body_mut().read_json::<serde_json::Value>().map_err(|e| e.to_string()))
-    .map_err(|e| format!("{e}"))??;
+    .call()
+    .map(|mut r| {
+      let sc = r.headers().get("x-oauth-scopes")
+        .and_then(|x| x.to_str().ok()).unwrap_or("").to_string();
+      (r.body_mut().read_json::<serde_json::Value>().unwrap_or(serde_json::Value::Null), sc)
+    })
+    .map_err(|e| format!("{e}"))?;
   let login = who["login"].as_str().ok_or("返回里没有 login（token 可能无效）")?.to_string();
   upsert_account(Acct {
     login: login.clone(), user_id: who["id"].as_i64().unwrap_or(0), token: tok.to_string(),
-    auth_mode: "pat".into(), scopes: String::new(), added_at: now_s(),
+    auth_mode: "pat".into(), scopes: scopes.clone(), added_at: now_s(),
   })?;
   let conn = open_db()?;
   set_setting(&conn, "active_login", &login)?;
@@ -1603,6 +1644,7 @@ pub fn add_pat_account(tok: &str) -> Result<serde_json::Value, String> {
   let core = &rl["resources"]["core"];
   Ok(serde_json::json!({ "login": login, "user_id": who["id"], "public_repos": who["public_repos"],
     "following": who["following"], "followers": who["followers"],
+    "scopes": scopes, "missing_scope": missing_scopes(&scopes),
     "quota_limit": core["limit"], "quota_remaining": core["remaining"] }))
 }
 

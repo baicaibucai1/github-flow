@@ -1,13 +1,13 @@
 import { Progress } from "@soda/ui";
 import { DashboardPage, PanelCard } from "@soda/patterns";
 import { call, log, type Counts } from "../lib/bridge";
-import { useStore } from "../lib/store";
+import { useApp } from "../lib/store";
 import { useEffect, useState } from "react";
 
 /** 统计页只报本机行为计数，不做任何"预测"。校准门槛 n>=20 直接写在这里，
     免得看的人以为几百条数据就能改排序。 */
 export function StatsView() {
-  const { stats } = useStore();
+  const { stats } = useApp();
   const [counts, setCounts] = useState<Counts | null>(null);
 
   useEffect(() => {

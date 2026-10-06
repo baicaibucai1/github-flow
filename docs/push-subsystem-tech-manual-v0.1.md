@@ -172,6 +172,27 @@ CREATE TABLE account (
 
 已知实现代价（未逐一核实）：Linux 的 Secret Service 需要 gnome-keyring/kwallet 常驻，headless、WSL、CI 下会直接失败，三平台各有失败态，需要在数据模型里体现为一个 `cred_state` 字段而不只是抛错。
 
+**原型现状（2026-10-06 修订）**：上面是目标形态，现在只做到一半——
+
+- 凭据只有一个去处：本机 `accounts.json`（明文，不进 SQLite）。曾经并存过第二个存储
+  `cred.bin`（单 token 的原型第一版），而 `token_for()` 在账号表里找不到时会回退去读它，
+  于是出现"界面上把账号删了、token 其实还在被用"。这条路已拆掉，账号表是唯一真相；
+  库里残留的 `account` 表也没有读者了（写它的 `whoami` 一并删除）。
+- `remove_account()` 现在连带清掉 `active_login`，否则"用我自己的口味建画像"会拿一个
+  已经不存在的账号去跑：请求退回匿名额度、词表却写在那个 login 名下，**而且不报错**。
+- `build_my_profile` 的身份改用 `current_acct()`——"真的带着 token 的那个账号"，
+  不再用 `active_login()`（它会退回 `profile_term` 的词表归属，那是原型阶段借来的公开账号
+  `yyx990803`：用户点"按我自己的口味"却建出陌生人的画像，而匿名读公开 starred 连错都不报）。
+- 新增 `auth_status`（`GET /rate_limit`，**不计配额**，所以可以在启动、登录类写操作之后、
+  窗口重新获得焦点、配额窗口翻篇这些时刻各问一次；不做每秒轮询）。它回报
+  `authed / login / mode / scopes` 与 core|search|graphql 的 limit-remaining-reset；
+  带 token 却回 401/403 就标 `invalid`。界面的"匿名态"横幅与配额徽章都由它驱动。
+- `scopes` 从认证响应的 `x-oauth-scopes` 头回读并存进账号表（此前恒为空，界面只能显示
+  "scope 未知"）。缺 `read:user` / `public_repo` 时提示但**不拦**——fine-grained token
+  不回报 scope，拦了会误伤。
+- 明文 `accounts.json` 相对 §3.1 的钥匙串目标仍是未做的（见 README"还没做"）。
+  将来换钥匙串只需要动 `load_accounts / save_accounts` 这一对函数。
+
 ### 3.2 仓库元数据（候选池本体）
 
 ```sql

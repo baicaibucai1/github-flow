@@ -11,11 +11,14 @@ fn main() {
 
   println!("[db] {}", feed::db_path());
   if args.get(1).map(|s| s.as_str()) == Some("token") {
+    // token 只走账号表这一条路：CLI 与界面的身份解析必须是同一个函数
     if let Some(t) = args.get(2) {
-      match feed::store_token(t) { Ok(()) => println!("token 已存本机（{} 字节）", t.len()), Err(e) => println!("存失败 {e}") };
+      match feed::add_pat_account(t) {
+        Ok(v) => println!("验证通过：{}", v),
+        Err(e) => println!("验证失败：{e}"),
+      };
     }
-    println!("当前状态：{}", feed::load_token().map(|t| format!("已存，长度 {}", t.len())).unwrap_or_else(|| "未存".into()));
-    println!("{}", feed::whoami(&mut |m| println!("{m}")));
+    println!("{}", feed::auth_status(&mut |m| println!("{m}")).unwrap_or(serde_json::json!(null)));
     return;
   }
   if args.get(1).map(|s| s.as_str()) == Some("device") {

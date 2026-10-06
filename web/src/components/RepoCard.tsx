@@ -24,7 +24,7 @@ import {
 import { cn } from "cn";
 import { n, type Card as FeedCard } from "../lib/bridge";
 import { logEvent, useExposure } from "../lib/exposure";
-import { useStore } from "../lib/store";
+import { requestTranslate, useApp, useDbg } from "../lib/store";
 
 const HIDE_REASONS: [string, string][] = [
   ["too_old", "太老 / 不活跃"],
@@ -44,7 +44,8 @@ export type RepoCardProps = {
 
 /** 一张卡片 = 一个候选项目。曝光判定挂在外层 div 上，卡片本身保持组件箱原样。 */
 export function RepoCard({ card, index, hero, onOpen, onHide, onSaved }: RepoCardProps) {
-  const { translated, requestTranslate, dbg } = useStore();
+  const { translated } = useApp();
+  const dbg = useDbg();
   const ref = useExposure({ id: card.id, slot: index, channel: card.channel });
 
   const desc = card.description ?? "";
