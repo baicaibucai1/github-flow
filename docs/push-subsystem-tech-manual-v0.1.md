@@ -24,7 +24,8 @@
 | D7 | `in:readme` 与 `topic:` 作为召回源**永久禁用** | 本手册推出，需你确认 |
 | D8 | 不做匿名模式（未登录时不承诺任何推荐能力） | 本手册推出，需你确认 |
 | D9 | **内嵌浏览 + 自绘重排版能力已实测成立**（见 9.6）；但程序化取数一律走 API，WebView 只作用户视角的逃生舱 | 已实测（本轮） |
-| D10 | **Tauri 必须用 MSVC 工具链**：windows-gnu 编出的 WebView 产物在 Win11 上起不来（见 9.6 末） | 已实测（本轮） |
+| D10 | ~~Tauri 必须用 MSVC~~ **已被推翻：windows-gnu 可行**。单独拉最新 `wry` 会导入 `api-ms-win-core-winrt-error-l1-1-0.dll`（该 API set 在 Win11 上不作为文件存在）导致起不来；改用 `web2exe-tauri` 模板里那套锁定的 tauri/wry 版本并把 MinGW 放进 PATH，GNU 产物正常运行——本仓库整个应用已连日在 `x86_64-pc-windows-gnu` 上跑通 | 已实测（推翻 v0.1.1 结论） |
+| D11 | **界面层直接采用 Soda UI**（组件箱 + 页面骨架 + token 真源，源码落进本仓库 `soda/`）。取数出入口仍然只有 Rust：不引入 `@tauri-apps/plugin-sql`，前端不许写 SQL、不许自己排序打分 | 已实测 |
 
 **D6 为什么成立（此处已修订，原来的推导是错的）。** 我原先写的是"否则就丢信号"，把"用户点了卡片就跳去浏览器"当成了既定事实——那不是事实，那是我们自己可以决定的事，所以那条推导不成立。正确的理由有三条：
 
@@ -662,7 +663,7 @@ webview_close  { repo_id, dwell_ms, final_host, ts }   -- final_host 用来识�
   代价说清：拿不到"他看了 README 还是看了 issue"那种细粒度——**那种精度只有 L1 自绘页提供**，这也正是 L1 必须自绘的理由。
 - **重排版能力用在刀刃上**：它服务于"我们自绘的详情页"（L1，数据来自 API），不服务于"搬运 GitHub 页面"。
 
-**工具链事实（D10）**：`wry` 在 `x86_64-pc-windows-gnu` 下**能编译通过但产物起不来**——导入表里写着 `api-ms-win-core-winrt-error-l1-1-0.dll`，而该 API set 在 Windows 11 上已作为文件不存在（实测 `System32` 里没有），运行即 `error while loading shared libraries`。所以 **Tauri 必须用 MSVC 工具链**，本机需装 VS Build Tools 的 C++ 工作负载 + Windows SDK（数 GB、机器级安装、会弹 UAC）。本轮这三项验证是在**不装任何东西**的前提下完成的：NuGet 解包 `Microsoft.Web.WebView2`（9.8MB）+ 系统已装的 WebView2 运行时 154.0.4258.48 + Windows PowerShell 5.1 承载。
+**工具链事实（D10，已更正）**：`wry` 在 `x86_64-pc-windows-gnu` 下的表现**取决于版本**：单独拉最新 wry 会编译通过但产物起不来——导入表里写着 `api-ms-win-core-winrt-error-l1-1-0.dll`，而该 API set 在 Windows 11 上已作为文件不存在（实测 `System32` 里没有），运行即 `error while loading shared libraries`；改用 `web2exe-tauri` 模板锁定的 tauri 2.11.6 / wry 0.55.1 / tao 0.35.3，并把 MinGW（`dlltool`/`windres`）放进 PATH，GNU 产物就正常运行。**不需要 MSVC**，本机整个应用已连日在 GNU 上跑通。本轮那三项 WebView2 能力验证是在**不装任何东西**的前提下完成的：NuGet 解包 `Microsoft.Web.WebView2`（9.8MB）+ 系统已装的 WebView2 运行时 154.0.4258.48 + Windows PowerShell 5.1 承载——它证明的是"WebView2 能加载 github.com"，与用哪套 Rust 工具链无关。
 
 两个附带踩到的实现坑，记下来省后人时间：**PowerShell 5.1 按 GBK 读 `.ps1`**，脚本里写中文字面量会在解析阶段炸（表现是"日志空 + exit 1"），所以承载脚本要纯 ASCII；**P/Invoke 声明 `GetWindowTextW` 必须带 `CharSet=CharSet.Unicode`**，否则按 ANSI 解 UTF-16，标题只读得到第一个字符，窗口枚举会假性"找不到窗口"。
 
@@ -745,7 +746,7 @@ webview_close  { repo_id, dwell_ms, final_host, ts }   -- final_host 用来识�
 
 **我标为未核实、需要 token 才能测完的**：认证态 core/search 的真实额度、GraphQL 批量富化的点数成本、304 是否消耗配额、star history 在老仓库上的分页行为。这些不影响本手册的架构结论，但影响 M1 的实现参数。
 
-**本轮新增的待拍项 —— Q4 工具链**：9.6 实测 `windows-gnu` 编出来的 WebView 产物在 Win11 上起不来，**Tauri 必须 MSVC**。要往下走（搭真骨架、把 9.6 的能力接进产品）就得装 VS Build Tools 的 C++ 工作负载 + Windows SDK：数 GB 下载、机器级安装、会弹 UAC。**不装也能继续纸面推进**，但"内置浏览器"就停在"引擎已验证、Tauri 集成未验证"。这条要你点头，我不会擅自装。
+**Q4 工具链 —— 已关闭（2026-10-06）**：不需要装 MSVC，也不需要装 VS Build Tools。`windows-gnu` 可行的前提是**版本取自 `web2exe-tauri` 模板的 `Cargo.lock`**（tauri 2.11.6 / wry 0.55.1 / tao 0.35.3）；当时"起不来"是因为单独拉了最新 wry，它导入 `api-ms-win-core-winrt-error-l1-1-0.dll` 而该 API set 在 Win11 上不作为文件存在。换回锁定版本 + MinGW 进 PATH 之后，本机连日构建运行的都是 GNU 产物，Tauri 集成（`WebviewWindowBuilder` 开外部 URL、界面内 README 重排版）也已跑通。
 
 ---
 

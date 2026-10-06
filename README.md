@@ -44,15 +44,27 @@ GitHub 没有 trending 接口，官方页面的排序也是黑盒。所以这里
 ## 目录
 
 ```
+web/                 界面：React 19 + Vite + Tailwind v4
+  src/App.tsx        三栏工作台外壳（Soda 的 FileManagerPage）
+  src/views/         FeedView / DetailView / StatsView / SettingsView
+  src/lib/bridge.ts  与 Rust 命令的类型契约；界面不碰 SQL
+soda/                Soda UI 源码：ui（组件箱）+ patterns（页面骨架）+ theme（token 真源）
+package.json         pnpm workspace 根（web + soda/*）
 src-tauri/
   src/feed.rs        取数、配额记账、落库、斜率、规则、排序（唯一出入口）
   src/main.rs        Tauri 命令层
   src/bin/collect.rs CLI：采集 / 画像 / 探索 / 详情 / 校准 / 设置
-dist/index.html      界面（双列卡片 + 频道标签 + 左导航 + 设置）
 docs/                推送子系统技术手册 v0.1.1
 measurements/        上面那些"已实测事实"的原始响应与复跑脚本
 tools/               WebView2 承载探针（.NET，用于在不装 MSVC 的情况下验证内嵌浏览）
 ```
+
+界面用 Soda UI 的规矩：页面只能拿组件箱和页面骨架里的东西搭，颜色和间距一律走语义 token
+（`bg-card` / `text-muted-foreground` / `gap-md`），出现色阶数字或散装像素即越界。
+README 那种第三方 HTML 除外，它在 `web/src/styles.css` 的 `.md` 段里按同一套 token 手写。
+
+搬进来的只有 `base-nova` 一套结构样式——对照样本 vega/maia/luma 没搬，真项目留多套等于
+Soda 的 ADR-101"单一真相"当场失效。同样没搬 `@tauri-apps/plugin-sql`：取数必须在 Rust 侧。
 
 ## 构建
 
@@ -60,9 +72,16 @@ Tauri 2 走 **GNU 工具链**（不需要 Visual Studio）。依赖 MinGW 在 PA
 
 ```bash
 export PATH=/path/to/msys64/mingw64/bin:$PATH   # dlltool/windres 要能找到
-cd src-tauri && cargo build                     # 首次约 2~3 分钟
-./target/debug/ghfind
+corepack pnpm@10 install                        # 本机 pnpm 只能经 corepack
+corepack pnpm@10 --filter web build             # 前端产物：web/dist（已 gitignore）
+cd src-tauri && cargo build                     # 前端资源在编译期嵌进 exe
+./target/debug/gh-feed.exe
 ```
+
+改界面时用 `corepack pnpm@10 --filter web dev` 起 Vite（:1420）再配 `tauri dev` 才有热更新；
+`cargo build` 出来的 exe 读的是构建那一刻的 `web/dist`，改完前端要重新 `cargo build`。
+
+窗口 `minWidth` 定在 1024：Soda 的三栏骨架在 `lg` 以下按契约直接隐藏侧栏，没有做兜底抽屉。
 
 采集器可以单独跑（不依赖界面）：
 
@@ -74,7 +93,8 @@ cd src-tauri && cargo build                     # 首次约 2~3 分钟
 ./target/debug/collect.exe stats       # 看事件计数
 ```
 
-数据与凭据都在 `%LOCALAPPDATA%\ghfind\`（`ghfind.db`、`accounts.json`），**都不进仓库**。
+数据与凭据都在 `%LOCALAPPDATA%\gh-feed\`（`gh-feed.db`、`accounts.json`、`ui.log`），**都不进仓库**。
+`ui.log` 是界面自己写进去的：窗口一关就什么都没了，判成败看这份日志而不是看退出码。
 
 ## 还没做
 

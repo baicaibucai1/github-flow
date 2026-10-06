@@ -1,0 +1,210 @@
+/* 界面层：Tailwind + @soda/theme 的 token 单一来源。
+   业务代码只准引用语义名（bg-card / text-muted-foreground / gap-md / text-body），
+   出现色阶数字或散装像素即越界（见 soda-ui 技术文档 §6）。 */
+@import "tailwindcss";
+@import "../../soda/theme/src/tokens.css";
+
+/* 深浅模式由 html[data-theme] 驱动，不是 prefers-color-scheme。
+   不声明这条，组件里所有 dark: 变体都不会切换。 */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* monorepo 源码不在 node_modules，Tailwind v4 需要显式声明扫描面 */
+@source "../../soda/ui/src";
+@source "../../soda/patterns/src";
+@source "./";
+
+/* ---------- 语义色 → 工具类 ---------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+  --color-done: var(--done);
+
+  /* token 层没有 sidebar 专用色：侧栏复用 secondary/accent，换主题集自动跟随 */
+  --color-sidebar: var(--secondary);
+  --color-sidebar-foreground: var(--secondary-foreground);
+  --color-sidebar-primary: var(--primary);
+  --color-sidebar-primary-foreground: var(--primary-foreground);
+  --color-sidebar-accent: var(--accent);
+  --color-sidebar-accent-foreground: var(--accent-foreground);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-sm: var(--shadow-sm);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* ---------- 命名间距：业务层只写名字 ---------- */
+@utility gap-2xs { gap: var(--space-2xs); }
+@utility gap-xs { gap: var(--space-xs); }
+@utility gap-sm { gap: var(--space-sm); }
+@utility gap-md { gap: var(--space-md); }
+@utility gap-lg { gap: var(--space-lg); }
+@utility gap-xl { gap: var(--space-xl); }
+@utility gap-2xl { gap: var(--space-2xl); }
+
+@utility p-xs { padding: var(--space-xs); }
+@utility p-sm { padding: var(--space-sm); }
+@utility p-md { padding: var(--space-md); }
+@utility p-lg { padding: var(--space-lg); }
+@utility px-sm { padding-inline: var(--space-sm); }
+@utility px-md { padding-inline: var(--space-md); }
+@utility py-xs { padding-block: var(--space-xs); }
+@utility py-sm { padding-block: var(--space-sm); }
+@utility py-md { padding-block: var(--space-md); }
+
+/* ---------- 字号角色：页面不许自造字号 ---------- */
+@utility text-caption {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption-lh);
+}
+@utility text-label {
+  font-size: var(--text-label);
+  line-height: var(--text-label-lh);
+  font-weight: 500;
+}
+@utility text-body {
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+}
+@utility text-lead {
+  font-size: var(--text-lead);
+  line-height: var(--text-lead-lh);
+}
+@utility text-heading {
+  font-size: var(--text-heading);
+  line-height: var(--text-heading-lh);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+@utility text-title {
+  font-size: var(--text-title);
+  line-height: var(--text-title-lh);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- 桌面窗口：整窗高度归应用自己 ---------- */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* ---------- README：第三方 HTML，套不进组件箱，只能按语义 token 手写 ---------- */
+.md {
+  font-size: var(--text-body);
+  line-height: 1.7;
+  color: var(--foreground);
+  overflow-wrap: break-word;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: var(--space-sm) 0 var(--space-2xs);
+  line-height: 1.3;
+  font-weight: 650;
+}
+.md h1 {
+  font-size: var(--text-title);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2xs);
+}
+.md h2 {
+  font-size: var(--text-heading);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2xs);
+}
+.md h3 {
+  font-size: var(--text-lead);
+}
+.md p {
+  margin: var(--space-2xs) 0;
+}
+.md ul,
+.md ol {
+  margin: var(--space-2xs) 0;
+  padding-left: var(--space-md);
+}
+.md li {
+  margin: 2px 0;
+}
+.md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+.md a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md code {
+  background: var(--muted);
+  padding: 1px var(--space-2xs);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+}
+.md pre {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  overflow: auto;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md blockquote {
+  margin: var(--space-2xs) 0;
+  padding: 2px var(--space-xs);
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+.md table {
+  border-collapse: collapse;
+  margin: var(--space-2xs) 0;
+  font-size: var(--text-label);
+  width: 100%;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: var(--space-2xs) var(--space-xs);
+  text-align: left;
+}
+.md th {
+  background: var(--muted);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--space-sm);
+}

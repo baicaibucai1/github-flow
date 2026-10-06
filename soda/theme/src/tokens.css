@@ -1,0 +1,307 @@
+/* ============================================================
+   @soda/theme — 设计 token 单一来源
+   业务层只允许引用语义名（bg-primary / text-muted-foreground / gap-md），
+   不允许出现色阶数字与 arbitrary value。见技术文档 §6、ADR-103。
+
+   结构：
+   1. scale（spacing / typography / radius / motion）—— 与主题无关，全系统共用
+   2. 语义色 —— 由 [data-set] 切换主题集，由 [data-theme] 切换明暗
+   3. 字体族由 app 注入（--app-font-sans），token 层不写死平台字体
+   ============================================================ */
+
+:root {
+  /* ---------- scale：官方缺失，本项目的新增价值 ---------- */
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+
+  --text-caption: 0.75rem;
+  --text-caption-lh: 1rem;
+  --text-label: 0.8125rem;
+  --text-label-lh: 1.125rem;
+  --text-body: 0.875rem;
+  --text-body-lh: 1.375rem;
+  --text-lead: 1rem;
+  --text-lead-lh: 1.5rem;
+  --text-heading: 1.25rem;
+  --text-heading-lh: 1.75rem;
+  --text-title: 1.5rem;
+  --text-title-lh: 2rem;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 14px -3px rgb(0 0 0 / 0.12);
+  --shadow-lg: 0 18px 40px -12px rgb(0 0 0 / 0.22);
+
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --app-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-sans: var(--app-font-sans);
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  /* 触控最小目标（技术文档 §14 / 说明文档部件一） */
+  --touch-target: 2.25rem;
+}
+
+/* ============================================================
+   主题集 1：soda —— 中性石墨，默认
+   ============================================================ */
+[data-set="soda"] {
+  --radius: 0.625rem;
+  --background: oklch(0.995 0.002 265);
+  --foreground: oklch(0.21 0.02 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 265);
+  --primary: oklch(0.24 0.02 265);
+  --primary-foreground: oklch(0.98 0.005 265);
+  --secondary: oklch(0.96 0.006 265);
+  --secondary-foreground: oklch(0.28 0.02 265);
+  --muted: oklch(0.965 0.004 265);
+  --muted-foreground: oklch(0.55 0.02 265);
+  --accent: oklch(0.94 0.014 265);
+  --accent-foreground: oklch(0.26 0.03 265);
+  --destructive: oklch(0.585 0.233 27.7);
+  --destructive-foreground: oklch(0.98 0.01 20);
+  --border: oklch(0.9 0.006 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.62 0.03 265);
+  --warn: oklch(0.75 0.15 85);
+  --ok: oklch(0.63 0.16 152);
+  --done: oklch(0.58 0.19 265);
+}
+
+[data-set="soda"][data-theme="dark"] {
+  --background: oklch(0.17 0.015 265);
+  --foreground: oklch(0.96 0.005 265);
+  --card: oklch(0.21 0.018 265);
+  --card-foreground: oklch(0.96 0.005 265);
+  --popover: oklch(0.22 0.018 265);
+  --popover-foreground: oklch(0.96 0.005 265);
+  --primary: oklch(0.94 0.01 265);
+  --primary-foreground: oklch(0.2 0.02 265);
+  --secondary: oklch(0.28 0.02 265);
+  --secondary-foreground: oklch(0.95 0.005 265);
+  --muted: oklch(0.25 0.018 265);
+  --muted-foreground: oklch(0.7 0.02 265);
+  --accent: oklch(0.31 0.025 265);
+  --accent-foreground: oklch(0.96 0.01 265);
+  --destructive: oklch(0.64 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 20);
+  --border: oklch(0.33 0.02 265);
+  --input: oklch(0.33 0.02 265);
+  --ring: oklch(0.6 0.03 265);
+  --warn: oklch(0.78 0.14 85);
+  --ok: oklch(0.7 0.16 152);
+  --done: oklch(0.68 0.17 265);
+}
+
+/* ============================================================
+   主题集 2：ink —— 冷蓝，工具型密集界面
+   ============================================================ */
+[data-set="ink"] {
+  --radius: 0.25rem;
+  --background: oklch(0.985 0.004 245);
+  --foreground: oklch(0.23 0.03 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.23 0.03 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.23 0.03 255);
+  --primary: oklch(0.5 0.19 262);
+  --primary-foreground: oklch(0.98 0.01 260);
+  --secondary: oklch(0.95 0.012 250);
+  --secondary-foreground: oklch(0.32 0.06 260);
+  --muted: oklch(0.955 0.008 250);
+  --muted-foreground: oklch(0.53 0.03 255);
+  --accent: oklch(0.93 0.03 258);
+  --accent-foreground: oklch(0.3 0.1 262);
+  --destructive: oklch(0.56 0.22 22);
+  --destructive-foreground: oklch(0.98 0.01 20);
+  --border: oklch(0.89 0.014 250);
+  --input: oklch(0.89 0.014 250);
+  --ring: oklch(0.5 0.19 262);
+  --warn: oklch(0.74 0.15 80);
+  --ok: oklch(0.62 0.15 155);
+  --done: oklch(0.5 0.19 262);
+}
+
+[data-set="ink"][data-theme="dark"] {
+  --background: oklch(0.16 0.022 260);
+  --foreground: oklch(0.95 0.01 255);
+  --card: oklch(0.2 0.028 260);
+  --card-foreground: oklch(0.95 0.01 255);
+  --popover: oklch(0.21 0.03 260);
+  --popover-foreground: oklch(0.95 0.01 255);
+  --primary: oklch(0.68 0.17 258);
+  --primary-foreground: oklch(0.16 0.03 262);
+  --secondary: oklch(0.27 0.035 260);
+  --secondary-foreground: oklch(0.94 0.015 255);
+  --muted: oklch(0.24 0.03 260);
+  --muted-foreground: oklch(0.7 0.025 258);
+  --accent: oklch(0.3 0.05 260);
+  --accent-foreground: oklch(0.95 0.02 255);
+  --destructive: oklch(0.63 0.19 24);
+  --destructive-foreground: oklch(0.98 0.01 20);
+  --border: oklch(0.32 0.035 260);
+  --input: oklch(0.32 0.035 260);
+  --ring: oklch(0.68 0.17 258);
+  --warn: oklch(0.78 0.14 80);
+  --ok: oklch(0.7 0.15 155);
+  --done: oklch(0.68 0.17 258);
+}
+
+/* ============================================================
+   主题集 3：sandbox —— 暖砂，内容/笔记型
+   ============================================================ */
+[data-set="sandbox"] {
+  --radius: 0.9rem;
+  --background: oklch(0.985 0.008 80);
+  --foreground: oklch(0.26 0.025 60);
+  --card: oklch(1 0.004 85);
+  --card-foreground: oklch(0.26 0.025 60);
+  --popover: oklch(1 0.004 85);
+  --popover-foreground: oklch(0.26 0.025 60);
+  --primary: oklch(0.58 0.13 55);
+  --primary-foreground: oklch(0.98 0.01 85);
+  --secondary: oklch(0.95 0.02 80);
+  --secondary-foreground: oklch(0.34 0.06 60);
+  --muted: oklch(0.955 0.014 82);
+  --muted-foreground: oklch(0.55 0.03 65);
+  --accent: oklch(0.93 0.04 78);
+  --accent-foreground: oklch(0.32 0.08 55);
+  --destructive: oklch(0.57 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 85);
+  --border: oklch(0.89 0.022 78);
+  --input: oklch(0.89 0.022 78);
+  --ring: oklch(0.58 0.13 55);
+  --warn: oklch(0.74 0.15 75);
+  --ok: oklch(0.6 0.13 145);
+  --done: oklch(0.55 0.11 240);
+}
+
+[data-set="sandbox"][data-theme="dark"] {
+  --background: oklch(0.19 0.018 65);
+  --foreground: oklch(0.95 0.014 80);
+  --card: oklch(0.23 0.02 68);
+  --card-foreground: oklch(0.95 0.014 80);
+  --popover: oklch(0.24 0.02 68);
+  --popover-foreground: oklch(0.95 0.014 80);
+  --primary: oklch(0.78 0.13 62);
+  --primary-foreground: oklch(0.22 0.04 60);
+  --secondary: oklch(0.29 0.025 68);
+  --secondary-foreground: oklch(0.94 0.02 80);
+  --muted: oklch(0.26 0.022 68);
+  --muted-foreground: oklch(0.71 0.025 70);
+  --accent: oklch(0.32 0.04 66);
+  --accent-foreground: oklch(0.96 0.02 80);
+  --destructive: oklch(0.64 0.19 25);
+  --destructive-foreground: oklch(0.98 0.01 85);
+  --border: oklch(0.33 0.03 68);
+  --input: oklch(0.33 0.03 68);
+  --ring: oklch(0.78 0.13 62);
+  --warn: oklch(0.8 0.14 75);
+  --ok: oklch(0.7 0.14 145);
+  --done: oklch(0.66 0.13 240);
+}
+
+/* ============================================================
+   主题集 4：marine —— 青蓝，数据/仪表盘型
+   ============================================================ */
+[data-set="marine"] {
+  --radius: 0.5rem;
+  --background: oklch(0.99 0.005 210);
+  --foreground: oklch(0.24 0.03 225);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.03 225);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.03 225);
+  --primary: oklch(0.56 0.12 205);
+  --primary-foreground: oklch(0.98 0.01 210);
+  --secondary: oklch(0.95 0.014 210);
+  --secondary-foreground: oklch(0.3 0.05 220);
+  --muted: oklch(0.96 0.008 215);
+  --muted-foreground: oklch(0.54 0.03 220);
+  --accent: oklch(0.93 0.035 205);
+  --accent-foreground: oklch(0.28 0.08 210);
+  --destructive: oklch(0.57 0.21 25);
+  --destructive-foreground: oklch(0.98 0.01 210);
+  --border: oklch(0.9 0.014 215);
+  --input: oklch(0.9 0.014 215);
+  --ring: oklch(0.56 0.12 205);
+  --warn: oklch(0.75 0.15 85);
+  --ok: oklch(0.63 0.15 160);
+  --done: oklch(0.56 0.12 205);
+}
+
+[data-set="marine"][data-theme="dark"] {
+  --background: oklch(0.17 0.02 225);
+  --foreground: oklch(0.95 0.01 215);
+  --card: oklch(0.21 0.026 222);
+  --card-foreground: oklch(0.95 0.01 215);
+  --popover: oklch(0.22 0.028 222);
+  --popover-foreground: oklch(0.95 0.01 215);
+  --primary: oklch(0.72 0.13 200);
+  --primary-foreground: oklch(0.18 0.03 220);
+  --secondary: oklch(0.28 0.03 222);
+  --secondary-foreground: oklch(0.94 0.015 215);
+  --muted: oklch(0.25 0.028 222);
+  --muted-foreground: oklch(0.71 0.025 218);
+  --accent: oklch(0.31 0.05 208);
+  --accent-foreground: oklch(0.96 0.02 210);
+  --destructive: oklch(0.64 0.19 25);
+  --destructive-foreground: oklch(0.98 0.01 210);
+  --border: oklch(0.33 0.032 222);
+  --input: oklch(0.33 0.032 222);
+  --ring: oklch(0.72 0.13 200);
+  --warn: oklch(0.79 0.14 85);
+  --ok: oklch(0.7 0.15 160);
+  --done: oklch(0.7 0.13 205);
+}
+
+/* ============================================================
+   派生量与全局基线
+   ============================================================ */
+:root {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+*,
+*::before,
+*::after {
+  border-color: var(--border);
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

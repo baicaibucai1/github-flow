@@ -19,3 +19,8 @@ ui.log
 .tauri-key*
 node_modules/
 dist/*.feed.json
+
+# 前端构建产物与工具缓存（Vite/TSC/pnpm）
+web/dist/
+*.tsbuildinfo
+install.log

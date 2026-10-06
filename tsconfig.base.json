@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@soda/ui": ["soda/ui/src/index.ts"],
+      "@soda/ui/*": ["soda/ui/src/*"],
+      "@soda/patterns": ["soda/patterns/src/index.ts"],
+      "@soda/patterns/*": ["soda/patterns/src/*"],
+      "@soda/theme/tokens.css": ["soda/theme/src/tokens.css"]
+    }
+  }
+}
