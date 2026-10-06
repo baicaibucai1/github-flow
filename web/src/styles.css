@@ -121,6 +121,85 @@ body,
   height: 100%;
 }
 
+/* ============================================================
+   github 皮肤（候选 A）的形状层
+   token 层只给色值与 --radius: 6px；但组件自带的是 rounded-lg / rounded-xl
+   （= --radius 与 --radius+4px），卡片会算成 10px，比 GitHub 的 6px 圆。
+   这一段是"风格包 B 档"：无层 CSS，优先级高于 @layer utilities，
+   所以不用 !important 就能把形状收回来。
+   ============================================================ */
+[data-set="github"] [data-slot="card"],
+[data-set="github"] [data-slot="button"],
+[data-set="github"] [data-slot="input"],
+[data-set="github"] [data-slot="alert"],
+[data-set="github"] [data-slot="item"],
+[data-set="github"] [data-slot="field"] {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+/* GitHub 的标签是描边胶囊，不是色块 */
+[data-set="github"] [data-slot="badge"] {
+  border-radius: 9999px;
+  background-color: var(--secondary);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+[data-set="github"] [data-slot="badge"].font-mono {
+  border-radius: 6px;
+}
+
+/* 主按钮在 GitHub 上是绿不是蓝（收藏、保存这类真"提交"动作才点它） */
+[data-set="github"] .gh-go {
+  background-color: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #fff;
+}
+[data-set="github"] .gh-go:hover {
+  background-color: #1a7f37;
+}
+
+/* 语言点与贡献格的色阶是数据，不是主题：允许具体色值 */
+.gh-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.gh-calendar {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+}
+.gh-week {
+  display: grid;
+  grid-template-rows: repeat(7, 10px);
+  gap: 3px;
+}
+.gh-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ebedf0;
+  outline: 1px solid rgba(31, 35, 40, 0.05);
+  outline-offset: -1px;
+}
+[data-theme="dark"] .gh-cell {
+  background: #151b23;
+  outline-color: rgba(240, 246, 252, 0.05);
+}
+.gh-cell[data-l="1"] { background: #9be9a8; }
+.gh-cell[data-l="2"] { background: #40c463; }
+.gh-cell[data-l="3"] { background: #30a14e; }
+.gh-cell[data-l="4"] { background: #216e39; }
+[data-theme="dark"] .gh-cell[data-l="1"] { background: #0e4429; }
+[data-theme="dark"] .gh-cell[data-l="2"] { background: #006d32; }
+[data-theme="dark"] .gh-cell[data-l="3"] { background: #26a641; }
+[data-theme="dark"] .gh-cell[data-l="4"] { background: #39d353; }
+.gh-cell.gh-none { background: transparent; outline: none; }
+
 /* ---------- README：第三方 HTML，套不进组件箱，只能按语义 token 手写 ---------- */
 .md {
   font-size: var(--text-body);

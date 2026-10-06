@@ -59,9 +59,19 @@ measurements/        上面那些"已实测事实"的原始响应与复跑脚本
 tools/               WebView2 承载探针（.NET，用于在不装 MSVC 的情况下验证内嵌浏览）
 ```
 
-界面用 Soda UI 的规矩：页面只能拿组件箱和页面骨架里的东西搭，颜色和间距一律走语义 token
-（`bg-card` / `text-muted-foreground` / `gap-md`），出现色阶数字或散装像素即越界。
-README 那种第三方 HTML 除外，它在 `web/src/styles.css` 的 `.md` 段里按同一套 token 手写。
+界面用 Soda UI 的**组件箱与 token 层**（`bg-card` / `text-muted-foreground` / `gap-md`，
+出现色阶数字或散装像素即越界），但页面骨架不套 `@soda/patterns` 那八个：它们定的是
+"顶部标签 + 12 栏面板"的 dashboard 摆法，而这轮要的是 GitHub 的连续流。所以页面内容统一走
+`web/src/components/gh.tsx` 这一层词汇（带表头的 Box、Box 里的一行、左侧导航、贡献格、语言点），
+外壳仍是 `FileManagerPage`。默认主题集是 `github`（Primer 的色值 + 6px 圆角 + 无阴影），
+想切回 Soda 自带的四套在设置→外观。README 那种第三方 HTML 除外，它在 `styles.css` 的 `.md`
+段里按同一套 token 手写。
+
+皮肤这层有断言守着，复跑：
+
+```bash
+corepack pnpm@10 --filter web build && node web/check-skin.mjs   # 14 条：token/默认集/逐页信息块
+```
 
 搬进来的只有 `base-nova` 一套结构样式——对照样本 vega/maia/luma 没搬，真项目留多套等于
 Soda 的 ADR-101"单一真相"当场失效。同样没搬 `@tauri-apps/plugin-sql`：取数必须在 Rust 侧。

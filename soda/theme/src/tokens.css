@@ -267,6 +267,63 @@
 }
 
 /* ============================================================
+   主题集 5：github —— GitHub 自己的 Primer 亮色值
+   这一套不是"感觉像 GitHub"：色值逐条取自 Primer 的 light/dark 主题，
+   页面底是 canvas.default(白) 而不是 subtle(灰) —— GitHub 只在按钮、
+   内嵌区、代码块上用 #f6f8fa。形状与密度另说，见应用层 styles.css。
+   ============================================================ */
+[data-set="github"] {
+  --radius: 6px;
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f8fa;
+  --secondary-foreground: #1f2328;
+  --muted: #f6f8fa;
+  --muted-foreground: #59636e;
+  --accent: #eff1f3;
+  --accent-foreground: #1f2328;
+  --destructive: #cf222e;
+  --destructive-foreground: #ffffff;
+  --border: #d0d7da;
+  --input: #d0d7da;
+  --ring: #0969da;
+  --warn: #9a6700;
+  --ok: #1a7f37;
+  --done: #8250df;
+}
+
+[data-set="github"][data-theme="dark"] {
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --card: #0d1117;
+  --card-foreground: #e6edf3;
+  --popover: #151b23;
+  --popover-foreground: #e6edf3;
+  --primary: #1f6feb;
+  --primary-foreground: #ffffff;
+  --secondary: #151b23;
+  --secondary-foreground: #e6edf3;
+  --muted: #151b23;
+  --muted-foreground: #7d8590;
+  --accent: #21262d;
+  --accent-foreground: #e6edf3;
+  --destructive: #f85149;
+  --destructive-foreground: #ffffff;
+  --border: #3d444d;
+  --input: #3d444d;
+  --ring: #1f6feb;
+  --warn: #d29922;
+  --ok: #3fb950;
+  --done: #a371f7;
+}
+
+/* ============================================================
    派生量与全局基线
    ============================================================ */
 :root {

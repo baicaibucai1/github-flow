@@ -25,5 +25,3 @@ web/dist/
 *.tsbuildinfo
 install.log
 
-# 三路候选的探针产物与临时页面（验收完整个 probe/ 可以删）
-web/probe-dist/

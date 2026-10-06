@@ -1,30 +1,10 @@
 import { useEffect } from "react";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@soda/ui";
-import {
-  BookmarkIcon,
-  ChevronDownIcon,
-  ClipboardCopyIcon,
-  ExternalLinkIcon,
-  EyeOffIcon,
-} from "lucide-react";
-import { cn } from "cn";
+import { Badge, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@soda/ui";
+import { BookmarkIcon, ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import { log, n, openExternal, type Card as FeedCard } from "../lib/bridge";
 import { logEvent, useExposure } from "../lib/exposure";
 import { requestTranslate, useApp, useDbg } from "../lib/store";
+import { BoxRow, LangDot } from "./gh";
 
 const HIDE_REASONS: [string, string][] = [
   ["too_old", "太老 / 不活跃"],
@@ -36,14 +16,16 @@ const HIDE_REASONS: [string, string][] = [
 export type RepoCardProps = {
   card: FeedCard;
   index: number;
-  hero?: boolean;
   onOpen: (id: number) => void;
   onHide: (id: number, reason: string, label: string) => void;
   onSaved: (id: number, learned: string[]) => void;
 };
 
-/** 一张卡片 = 一个候选项目。曝光判定挂在外层 div 上，卡片本身保持组件箱原样。 */
-export function RepoCard({ card, index, hero, onOpen, onHide, onSaved }: RepoCardProps) {
+/**
+ * 一条候选 = Box 里的一行，不是浮在网格里的卡片。
+ * 曝光判定挂在这一行上（可见 ≥50% 且停留 ≥1s 才记）。
+ */
+export function RepoRow({ card, index, onOpen, onHide, onSaved }: RepoCardProps) {
   const { translated } = useApp();
   const dbg = useDbg();
   const ref = useExposure({ id: card.id, slot: index, channel: card.channel });
@@ -51,106 +33,34 @@ export function RepoCard({ card, index, hero, onOpen, onHide, onSaved }: RepoCar
   const desc = card.description ?? "";
   useEffect(() => {
     if (desc) requestTranslate([desc]);
-  }, [desc, requestTranslate]);
+  }, [desc]);
   const zh = desc ? translated.get(desc) : undefined;
+  const peak = card.weeks.length ? Math.max(...card.weeks) : null;
 
   return (
-    <div ref={ref} className={cn("min-w-0", hero && "sm:col-span-2 2xl:col-span-3")}>
-      <Card className="h-full items-stretch gap-0 py-0">
-        <CardHeader className="gap-2xs py-sm">
-          <CardTitle className={cn("truncate", hero ? "text-heading" : "text-lead")}>
-            <Button
-              variant="link"
-              size="xs"
-              className="h-auto max-w-full justify-start p-0"
-              onClick={() => onOpen(card.id)}
-            >
-              <span className="truncate">{card.full_name}</span>
-            </Button>
-          </CardTitle>
-          <div className="flex flex-wrap items-center gap-2xs">
-            {card.channel === "profile" ? <Badge>画像</Badge> : null}
-            {card.window === "explore" ? <Badge variant="secondary">探索</Badge> : null}
-            <Badge variant="outline">出生 {card.age_days} 天</Badge>
-            {card.seen ? (
-              <Badge variant="ghost">看过了</Badge>
-            ) : (
-              <Badge variant="outline">未看过</Badge>
-            )}
-            {card.spam ? <Badge variant="destructive">降权</Badge> : null}
-            {card.slope == null ? <Badge variant="destructive">斜率未知</Badge> : null}
-            {dbg ? <Badge variant="ghost">score {card.score.toFixed(3)}</Badge> : null}
-          </div>
-        </CardHeader>
+    <BoxRow ref={ref} className="flex flex-col gap-2xs">
+      <div className="flex flex-wrap items-start justify-between gap-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-xs">
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto max-w-full p-0 text-lead font-semibold"
+            onClick={() => onOpen(card.id)}
+          >
+            <span className="truncate">{card.full_name}</span>
+          </Button>
+          {card.channel === "profile" ? <Badge>画像</Badge> : null}
+          {card.window === "explore" ? <Badge variant="secondary">探索</Badge> : null}
+          {card.spam ? <Badge variant="destructive">降权</Badge> : null}
+          {card.slope == null ? <Badge variant="destructive">斜率未知</Badge> : null}
+          {card.seen ? <Badge variant="outline">看过了</Badge> : null}
+        </div>
 
-        <CardContent className="flex min-w-0 flex-1 flex-col gap-xs py-sm">
-          <p className="text-body">
-            {desc ? (
-              <>
-                {zh ?? desc}
-                {zh ? (
-                  <span className="mt-2xs block text-caption text-muted-foreground">
-                    原文：{desc}
-                  </span>
-                ) : null}
-              </>
-            ) : (
-              <span className="text-muted-foreground">（无简介）</span>
-            )}
-          </p>
-
-          {card.topics.length ? (
-            <div className="flex flex-wrap gap-2xs">
-              {card.topics.slice(0, 5).map((t) => (
-                <Badge key={t} variant="secondary">
-                  {t}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-xs text-caption tabular-nums">
-            <Stat k="star" v={card.stars} />
-            <Stat k="fork" v={card.forks} />
-            <Stat k="watch" v={card.subscribers} />
-            <Stat k="issue" v={card.open_issues} />
-            <span className="text-muted-foreground">
-              日均 <span className="font-medium text-foreground">{n(card.slope)}</span>
-            </span>
-            {card.weeks.length ? (
-              <span className="text-muted-foreground">
-                周峰值 <span className="font-medium text-foreground">
-                  +{Math.max(...card.weeks).toLocaleString()}
-                </span>{" "}
-                · {card.weeks.length} 周
-              </span>
-            ) : null}
-          </div>
-
-          {card.why.length ? (
-            <ul className="flex flex-col gap-2xs text-caption">
-              {card.why.map((w, i) => (
-                <li
-                  key={i}
-                  className={cn(
-                    /降权|不成比例/.test(w)
-                      ? "text-destructive"
-                      : /不足|尚未/.test(w)
-                        ? "text-muted-foreground/70"
-                        : "text-muted-foreground"
-                  )}
-                >
-                  {w}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </CardContent>
-
-        <CardFooter className="flex-wrap gap-2xs border-t py-xs">
+        <div className="flex shrink-0 items-center gap-2xs">
           <Button
             size="xs"
-            variant={card.saved ? "secondary" : "default"}
+            variant={card.saved ? "outline" : "default"}
+            className={card.saved ? "" : "gh-go"}
             onClick={() => {
               void logEvent("star_in_app", card.id)
                 .then((r) => onSaved(card.id, r.learned ?? []))
@@ -160,63 +70,82 @@ export function RepoCard({ card, index, hero, onOpen, onHide, onSaved }: RepoCar
             <BookmarkIcon data-icon="inline-start" />
             {card.saved ? "已收藏" : "收藏"}
           </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button size="xs" variant="outline" />}>
               <EyeOffIcon data-icon="inline-start" />
               不感兴趣
               <ChevronDownIcon data-icon="inline-end" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>选一个理由，只影响这一条</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {HIDE_REASONS.map(([reason, label]) => (
-                <DropdownMenuItem
-                  key={reason}
-                  onClick={() => onHide(card.id, reason, label)}
-                >
+                <DropdownMenuItem key={reason} onClick={() => onHide(card.id, reason, label)}>
                   {label}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
+      </div>
 
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => {
-              // 跳出去是一种独立信号（手册 9.1）：它跟"在应用里点开"不是一回事，
-              // 混成同一个 kind 就没法算"多少内容其实是在 GitHub 上看完的"
-              void logEvent("open_in_browser", card.id, card.url).catch(() => {});
-              openExternal(card.url).catch((e) => log("open FAIL " + e));
-            }}
-          >
-            <ExternalLinkIcon data-icon="inline-start" />
-            浏览器打开
-          </Button>
+      <p className="max-w-prose text-body">
+        {desc ? (
+          <>
+            {zh ?? desc}
+            {zh ? <span className="ms-xs text-caption text-muted-foreground">原文：{desc}</span> : null}
+          </>
+        ) : (
+          <span className="text-muted-foreground">（无简介）</span>
+        )}
+      </p>
 
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => {
-              const cmd = `git clone ${card.url}.git`;
-              void logEvent("copy_clone", card.id, cmd).catch(() => {});
-              navigator.clipboard.writeText(cmd).catch(() => {});
-            }}
-          >
-            <ClipboardCopyIcon data-icon="inline-start" />
-            clone
-          </Button>
-        </CardFooter>
-      </Card>
-    </div>
-  );
-}
+      {card.topics.length ? (
+        <div className="flex flex-wrap gap-2xs">
+          {card.topics.slice(0, 5).map((t) => (
+            <Badge key={t} variant="outline">
+              {t}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
 
-function Stat({ k, v }: { k: string; v: number }) {
-  return (
-    <span className="text-muted-foreground">
-      <span className="font-medium text-foreground">{v.toLocaleString()}</span> {k}
-    </span>
+      <div className="flex flex-wrap items-center gap-md text-caption text-muted-foreground tabular-nums">
+        {card.language ? <LangDot name={card.language} /> : null}
+        <span>★ {card.stars.toLocaleString()}</span>
+        <span>⑂ {card.forks}</span>
+        <span>{card.subscribers} 关注</span>
+        <span>{card.open_issues} issue</span>
+        <span>日均 {n(card.slope)}</span>
+        {peak != null ? <span>周峰值 +{peak.toLocaleString()}</span> : null}
+        <span>出生 {card.age_days} 天</span>
+        {dbg ? <span>score {card.score.toFixed(3)}</span> : null}
+        <button
+          className="underline"
+          onClick={() => {
+            void logEvent("open_in_browser", card.id, card.url).catch(() => {});
+            openExternal(card.url).catch((e) => log("open FAIL " + e));
+          }}
+        >
+          浏览器打开
+        </button>
+        {/* clone 是三个强正样本之一（手册 9.1），行式卡片再瘦也不能把它省掉 */}
+        <button
+          className="underline"
+          onClick={() => {
+            const cmd = `git clone ${card.url}.git`;
+            void logEvent("copy_clone", card.id, cmd).catch(() => {});
+            navigator.clipboard.writeText(cmd).catch(() => {});
+            log("clone copied");
+          }}
+        >
+          clone
+        </button>
+      </div>
+
+      {card.why.length ? (
+        <p className="max-w-prose text-caption text-muted-foreground">{card.why.join(" · ")}</p>
+      ) : null}
+    </BoxRow>
   );
 }

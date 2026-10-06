@@ -27,7 +27,7 @@ export type Snapshot = {
 
 const DEFAULTS: Settings = {
   theme: "light",
-  set: "ink",
+  set: "github",
   lang: "zh-CN",
   translate_on: "0",
   translate_url: "",

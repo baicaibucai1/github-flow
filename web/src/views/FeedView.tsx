@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Skeleton } from "@soda/ui";
-import { EmptyPage } from "@soda/patterns";
-import { InboxIcon, Loader2Icon, PlusIcon } from "lucide-react";
+import { Skeleton } from "@soda/ui";
 import { call, LIMIT, log, type Card } from "../lib/bridge";
-import { RepoCard } from "../components/RepoCard";
+import { RepoRow } from "../components/RepoCard";
+import { Box, BoxEmpty, BoxRow, MoreRow } from "../components/gh";
 
 export type FeedViewProps = {
   channel: string;
@@ -15,15 +14,17 @@ const EMPTY_TEXT: Record<string, { title: string; desc: string }> = {
   saved: { title: "还没有收藏", desc: "发现页点「收藏」就进这里。" },
   explore: {
     title: "探索池是空的",
-    desc: "点上方「取一批新生项目」或「采集新数据」，它会去拉最近 7/30/90 天出生、已有苗头的项目。",
+    desc: "点「采集新数据」或「取一批新生项目」，它会去拉最近 7/30/90 天出生、已有苗头的项目。",
   },
   profile: {
     title: "画像通道还没有内容",
-    desc: "先登录并点「用我自己的口味建画像」，画像词表建好后这一栏才会按你的口味抓取。",
+    desc: "先登录再点「用我自己的口味建画像」，词表建好后这一栏才会按你的口味抓取。",
   },
-  hot: { title: "热度榜是空的", desc: "点上方「采集新数据」跑一轮，约 60~90 次请求。" },
+  all: { title: "搜索没有带回候选", desc: "换个词试试 —— 搜索词本身会进你的兴趣画像。" },
+  hot: { title: "热度榜是空的", desc: "点「采集新数据」跑一轮，约 60~90 次请求。" },
 };
 
+/** 一屏 = 一个 Box，里面一行一个候选。分页是"显示更多"，不是无限滚。 */
 export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   const [items, setItems] = useState<Card[]>([]);
   const [offset, setOffset] = useState(0);
@@ -33,11 +34,7 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
     async (from: number) => {
       setPhase(from === 0 ? "loading" : "more");
       try {
-        const list = await call<Card[]>("get_channel", {
-          channel,
-          limit: LIMIT,
-          offset: from,
-        });
+        const list = await call<Card[]>("get_channel", { channel, limit: LIMIT, offset: from });
         setItems((prev) => (from === 0 ? list : [...prev, ...list]));
         setOffset(from + list.length);
         setPhase(list.length < LIMIT ? "done" : "idle");
@@ -58,16 +55,16 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
 
   if (phase === "loading") {
     return (
-      <div className="grid items-start gap-md p-md sm:grid-cols-2 2xl:grid-cols-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="flex flex-col gap-sm rounded-xl border p-md">
-            <Skeleton className="h-5 w-2/5" />
-            <Skeleton className="h-4 w-4/5" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-3/5" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        ))}
+      <div className="p-md">
+        <Box>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <BoxRow key={i} className="flex flex-col gap-xs">
+              <Skeleton className="h-4 w-1/4" />
+              <Skeleton className="h-3 w-2/3" />
+              <Skeleton className="h-3 w-1/3" />
+            </BoxRow>
+          ))}
+        </Box>
       </div>
     );
   }
@@ -75,30 +72,45 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   if (!items.length) {
     const t = EMPTY_TEXT[channel] ?? EMPTY_TEXT.hot;
     return (
-      <div className="p-lg">
-        <EmptyPage
-          icon={<InboxIcon />}
-          title={t.title}
-          description={t.desc}
-          action={
-            <Button size="sm" onClick={() => void fetchPage(0)}>
-              重新读取
-            </Button>
-          }
-        />
+      <div className="p-md">
+        <Box title={t.title}>
+          <BoxEmpty>
+            {t.desc}
+            <div className="mt-sm">
+              <MoreRow label="重新读取" onClick={() => void fetchPage(0)} />
+            </div>
+          </BoxEmpty>
+        </Box>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-md p-md">
-      <div className="grid items-start gap-md sm:grid-cols-2 2xl:grid-cols-3">
+      <Box
+        title={`${items.length} 个候选`}
+        aside={
+          <span>
+            通道 {channel} · 排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权
+          </span>
+        }
+        footer={
+          phase === "done" ? (
+            <MoreRow label="已到底 —— 重新读取" onClick={() => void fetchPage(0)} />
+          ) : (
+            <MoreRow
+              label={`显示更多（已显示 ${items.length}）`}
+              busy={phase === "more"}
+              onClick={() => void fetchPage(offset)}
+            />
+          )
+        }
+      >
         {items.map((c, i) => (
-          <RepoCard
+          <RepoRow
             key={c.id}
             card={c}
             index={i}
-            hero={i === 0}
             onOpen={onOpen}
             onHide={(id, reason, label) => {
               void call("log_event", { kind: "hide", repoId: id, payload: reason })
@@ -109,9 +121,7 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
                 .catch((e) => log("hide FAIL " + e));
             }}
             onSaved={(id, learned) => {
-              setItems((prev) =>
-                prev.map((x) => (x.id === id ? { ...x, saved: true } : x))
-              );
+              setItems((prev) => prev.map((x) => (x.id === id ? { ...x, saved: true } : x)));
               onNotice(
                 learned.length
                   ? `已把 ${learned.join("、")} 加进兴趣画像 —— 下一轮抓取会找更多这类项目`
@@ -120,36 +130,7 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
             }}
           />
         ))}
-      </div>
-
-      {phase === "done" ? (
-        <div className="flex items-center justify-center gap-xs text-caption text-muted-foreground">
-          {items.length >= LIMIT ? (
-            <span>这一页到底了 —— 候选池里已经没有更多「{channel}」内容</span>
-          ) : (
-            <span>共 {items.length} 条</span>
-          )}
-          <Button size="xs" variant="outline" onClick={() => void fetchPage(0)}>
-            重新读取
-          </Button>
-        </div>
-      ) : (
-        <div className="flex justify-center">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={phase === "more"}
-            onClick={() => void fetchPage(offset)}
-          >
-            {phase === "more" ? (
-              <Loader2Icon data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <PlusIcon data-icon="inline-start" />
-            )}
-            加载更多（已显示 {items.length}）
-          </Button>
-        </div>
-      )}
+      </Box>
     </div>
   );
 }
