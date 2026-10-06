@@ -157,14 +157,19 @@ async function run() {
   ok("切回概览：树还在（没被卸载重取）", !!box("文件") && calls.filter((c) => c.startsWith("repo_tree")).length === 1,
     calls.filter((c) => c.startsWith("repo_tree")).join(","));
 
-  // 卸载会补最后一条 dwell：借这一步验 dwell 带没带页签
-  root.unmount();
-  await sleep(300);
-  const last = dwells[dwells.length - 1];
-  ok("dwell 带得清是哪个页签", !!last && last.tab === "overview" && last.ms >= 1000, JSON.stringify(last ?? {}));
+  // 卸载会补最后一条 dwell：借这一步验 dwell 带没带页签。
+  // ?keep=1 时不卸载也不画结果浮层——那是留给人肉看布局的（截图/自己开页面看）。
+  const keep = new URLSearchParams(location.search).has("keep");
+  if (!keep) {
+    root.unmount();
+    await sleep(300);
+    const last = dwells[dwells.length - 1];
+    ok("dwell 带得清是哪个页签", !!last && last.tab === "overview" && last.ms >= 1000, JSON.stringify(last ?? {}));
+  }
 
   w.__PROBE__ = R;
-  showResults(R, calls, errs);
+  if (!keep) showResults(R, calls, errs);
+  else document.title = `LOOK ${R.filter(([, p]) => p).length}/${R.length}`;
   return R;
 }
 
