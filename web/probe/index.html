@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>三路对比 · 「我的」页</title>
+    <style>
+      body { margin: 0; background: #111; font-family: system-ui, sans-serif; }
+      header { position: sticky; top: 0; z-index: 9; background: #1f2328; color: #fff; padding: 10px 16px; }
+      header a { color: #79c0ff; margin-right: 18px; text-decoration: none; font-size: 14px; }
+      .cand { margin: 0 0 8px; padding: 14px 16px; color: #fff; font-size: 14px; }
+      .cand b { color: #f0f6fc; font-size: 15px; }
+      .cand span { color: #8b949e; }
+      iframe { display: block; width: 100%; height: 1000px; border: 0; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="#a">A · Soda + github 风格包</a>
+      <a href="#b">B · 官方 @primer/react</a>
+      <a href="#c">C · 手写 GitHub 复刻</a>
+      <a href="/probe/a.html" target="_blank">单独开 A</a>
+      <a href="/probe/b.html" target="_blank">单独开 B</a>
+      <a href="/probe/c.html" target="_blank">单独开 C</a>
+    </header>
+
+    <div class="cand" id="a">
+      <b>A</b> <span>保留 Soda 组件箱与可访问性原语，只换一套风格包（Primer 的色值/圆角/字号/无阴影）
+      + 把页面按 GitHub 的连续流重排。代价：组件内部结构还是 shadcn 的，"像不像"取决于重排。</span>
+    </div>
+    <iframe src="/probe/a.html"></iframe>
+
+    <div class="cand" id="b">
+      <b>B</b> <span>直接装 GitHub 官方设计系统 @primer/react 38.40.1（peer 已支持 React 19）。
+      好处是官方保证像；代价是它自带主题与运行时注入样式，跟 Tailwind 层是两套体系，
+      而且组件箱、Soda 的 token 层全部作废。</span>
+    </div>
+    <iframe src="/probe/b.html"></iframe>
+
+    <div class="cand" id="c">
+      <b>C</b> <span>不依赖任何库，手写 Primer 的视觉语言（class 名对齐 GitHub 自己的 markup）。
+      最自由、最像；代价是键盘焦点、ARIA、弹层这些可访问性要自己重做，
+      而这正是 Soda 文档"明确不做"清单上的第一条。</span>
+    </div>
+    <iframe src="/probe/c.html"></iframe>
+  </body>
+</html>

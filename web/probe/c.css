@@ -1,0 +1,106 @@
+/* 候选 C：手写 GitHub 复刻。不依赖任何组件库，class 名对齐 GitHub 自己的 markup，
+   数值全部取自 Primer 亮色主题（不是"感觉像"的近似值）。 */
+
+:root {
+  --canvas-default: #ffffff;
+  --canvas-subtle: #f6f8fa;
+  --canvas-inset: #f6f8fa;
+  --fg-default: #1f2328;
+  --fg-muted: #59636e;
+  --fg-on-emphasis: #ffffff;
+  --border-default: #d0d7da;
+  --border-muted: #d1d9e0;
+  --neutral-muted: #eff1f3;
+  --accent-fg: #0969da;
+  --success-fg: #1a7f37;
+  --done-fg: #8250df;
+  --btn-bg: #f6f8fa;
+  --btn-border: #d0d7da;
+  --btn-hover-bg: #f2f4f6;
+  --radius: 6px;
+  /* GitHub 的贡献格五档绿 */
+  --lvl0: #ebedf0;
+  --lvl1: #9be9a8;
+  --lvl2: #40c463;
+  --lvl3: #30a14e;
+  --lvl4: #216e39;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
+    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent-fg); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 顶部那条 GitHub 全局导航（深色）—— 认不认得出是 GitHub，一半靠它 */
+.Header { background: #24292f; border-bottom: 1px solid var(--border-default); padding: 12px 24px; color: #fff; }
+.Header-link { color: #fff; font-weight: 600; }
+
+.page { max-width: 1280px; margin: 0 auto; padding: 24px 16px; }
+.layout { display: grid; grid-template-columns: 296px minmax(0, 1fr); gap: 24px; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.Avatar { width: 100%; border-radius: var(--radius); display: block; background: var(--canvas-subtle); }
+.h1 { font-size: 24px; font-weight: 600; margin: 16px 0 0; line-height: 1.25; }
+.login { font-size: 20px; color: var(--fg-muted); margin: 2px 0 0; font-weight: 300; }
+.bio { margin: 16px 0 0; }
+
+.btn {
+  display: inline-block; width: 100%; margin-top: 16px; padding: 5px 16px;
+  font-size: 14px; font-weight: 500; line-height: 20px; text-align: center;
+  color: var(--fg-default); background: var(--btn-bg);
+  border: 1px solid var(--btn-border); border-radius: var(--radius); cursor: pointer;
+}
+.btn:hover { background: var(--btn-hover-bg); text-decoration: none; }
+.btn--primary { color: #fff; background: #1f883d; border-color: rgba(31, 35, 40, .15); }
+.btn--primary:hover { background: #1a7f37; }
+
+.user-stat { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--fg-muted); }
+.user-stat strong { color: var(--fg-default); }
+
+.follow { display: flex; gap: 8px; margin-top: 16px; color: var(--fg-muted); font-size: 14px; }
+
+.Box { background: var(--canvas-default); border: 1px solid var(--border-default); border-radius: var(--radius); }
+.Box-header { padding: 12px 16px; border-bottom: 1px solid var(--border-default); display: flex; align-items: center; justify-content: space-between; }
+.Box-title { font-size: 16px; font-weight: 600; margin: 0; }
+.Box-row { padding: 16px; border-top: 1px solid var(--border-default); }
+.Box-row:first-child { border-top: 0; }
+
+.repo-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.repo-name { font-size: 16px; font-weight: 600; }
+.Label {
+  display: inline-block; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px;
+  color: var(--fg-muted); background: var(--canvas-default);
+  border: 1px solid var(--border-default); border-radius: 9999px;
+}
+.repo-desc { color: var(--fg-muted); margin: 4px 0 8px; }
+.repo-meta { display: flex; align-items: center; gap: 16px; color: var(--fg-muted); font-size: 12px; }
+.lang { display: inline-flex; align-items: center; gap: 4px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.section-title { font-size: 16px; font-weight: 600; margin: 24px 0 8px; }
+.mt-4 { margin-top: 16px; }
+
+/* 贡献格：10px 一方、3px 间距，跟 GitHub 一致 */
+.calendar { display: flex; gap: 3px; padding: 16px; overflow-x: auto; }
+.week { display: grid; grid-template-rows: repeat(7, 10px); gap: 3px; }
+.cell { width: 10px; height: 10px; border-radius: 2px; background: var(--lvl0); outline: 1px solid rgba(31, 35, 40, .05); outline-offset: -1px; }
+.cell[data-l="1"] { background: var(--lvl1); }
+.cell[data-l="2"] { background: var(--lvl2); }
+.cell[data-l="3"] { background: var(--lvl3); }
+.cell[data-l="4"] { background: var(--lvl4); }
+.cell.empty { background: transparent; outline: none; }
+
+.legend { display: flex; align-items: center; gap: 4px; justify-content: flex-end; padding: 0 16px 12px; color: var(--fg-muted); font-size: 12px; }
+
+.note { color: var(--fg-muted); font-size: 12px; padding: 12px 16px; border-top: 1px solid var(--border-default); }

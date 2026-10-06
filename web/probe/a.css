@@ -1,0 +1,114 @@
+/* 候选 A：保留 Soda 组件箱，换一套 "github" 风格包。
+   走 Soda 自己留的三档机制：A 档只改语义 token 的值，B 档改形状。
+   下面这些规则是**无层 CSS**，优先级高于 Tailwind 的 @layer utilities，
+   所以不需要 !important 就能盖住组件自带的 rounded 与 shadow 类。 */
+@import "../src/styles.css";
+
+/* ---------- A 档：Primer 亮色主题的语义值 ---------- */
+[data-style="github"] {
+  --app-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
+    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+
+  /* GitHub 的页面底是白的（canvas.default），#f6f8fa 只用在内嵌区与次级按钮上。
+     上一版这里设成灰底，是把 dashboard 的"灰盘子"当成了 GitHub 的样子。 */
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  /* GitHub 的主色是链接蓝；主按钮的绿单独用 .gh-primary 表达，不占 --primary */
+  --primary: #0969da;
+  --primary-foreground: #ffffff;
+  --secondary: #eff1f3;
+  --secondary-foreground: #1f2328;
+  --muted: #f6f8fa;
+  --muted-foreground: #59636e;
+  --accent: #eff1f3;
+  --accent-foreground: #1f2328;
+  --destructive: #cf222e;
+  --border: #d0d7da;
+  --input: #d0d7da;
+  --ring: #0969da;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+
+  --radius: 6px;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+}
+
+/* ---------- B 档：形状与密度 ---------- */
+[data-style="github"] [data-slot="card"],
+[data-style="github"] [data-slot="button"],
+[data-style="github"] [data-slot="input"],
+[data-style="github"] [data-slot="badge"],
+[data-style="github"] [data-slot="alert"],
+[data-style="github"] [data-slot="item"] {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+/* GitHub 的默认按钮是灰底 + 1px 边框，不是主色实心 */
+[data-style="github"] [data-slot="button"] {
+  background-color: #f6f8fa;
+  border-color: #d0d7da;
+  color: #1f2328;
+  font-weight: 500;
+}
+[data-style="github"] [data-slot="button"]:hover {
+  background-color: #f2f4f6;
+}
+/* 主按钮（绿）与危险按钮要显式点出来，别让"默认变灰"把它们一起抹平 */
+[data-style="github"] .gh-primary {
+  background-color: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #fff;
+}
+[data-style="github"] .gh-primary:hover {
+  background-color: #1a7f37;
+}
+/* 标签在 GitHub 里是描边胶囊，不是色块 */
+[data-style="github"] [data-slot="badge"] {
+  background-color: #eff1f3;
+  border-color: #d0d7da;
+  color: #59636e;
+  font-weight: 500;
+}
+/* 卡片不要阴影：GitHub 全靠 1px 边框分层 */
+[data-style="github"] [data-slot="card"] {
+  border-color: #d0d7da;
+  background-color: #fff;
+}
+/* 语言点是数据不是主题，允许具体色值 */
+.gh-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.gh-calendar {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+}
+.gh-week {
+  display: grid;
+  grid-template-rows: repeat(7, 10px);
+  gap: 3px;
+}
+.gh-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ebedf0;
+  outline: 1px solid rgba(31, 35, 40, 0.05);
+  outline-offset: -1px;
+}
+.gh-cell[data-l="1"] { background: #9be9a8; }
+.gh-cell[data-l="2"] { background: #40c463; }
+.gh-cell[data-l="3"] { background: #30a14e; }
+.gh-cell[data-l="4"] { background: #216e39; }
+.gh-cell.gh-empty { background: transparent; outline: none; }
