@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gh-feed",
+  "productName": "Github Flow",
   "version": "0.1.0",
   "identifier": "local.ghfeed.app",
   "build": {
@@ -9,7 +9,7 @@
   "app": {
     "windows": [
       {
-        "title": "GitHub 信息流",
+        "title": "Github Flow",
         "width": 1320,
         "height": 860,
         "minWidth": 1024,

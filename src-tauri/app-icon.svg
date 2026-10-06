@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Github Flow：一条主干 + 一个并回来的分支，汇合之后流是绿的。
+       深色底用 GitHub 自己的 #1f2328，绿用 GitHub 的 #3fb950。 -->
+  <rect width="1024" height="1024" rx="224" fill="#1f2328"/>
+
+  <!-- 主干：汇合点以上是白的 -->
+  <path d="M352 324 L352 512" stroke="#ffffff" stroke-width="56" stroke-linecap="round" fill="none"/>
+  <!-- 汇合点以下是绿的，表示分支已经流进主干 -->
+  <path d="M352 512 L352 700" stroke="#3fb950" stroke-width="56" stroke-linecap="round" fill="none"/>
+  <!-- 分支：从右上那个节点弯下来汇入主干 -->
+  <path d="M672 324 C672 480 540 512 384 512" stroke="#3fb950" stroke-width="56" stroke-linecap="round" fill="none"/>
+
+  <circle cx="352" cy="256" r="68" fill="#ffffff"/>
+  <circle cx="672" cy="256" r="68" fill="#3fb950"/>
+  <circle cx="352" cy="768" r="68" fill="#ffffff"/>
+</svg>

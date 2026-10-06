@@ -216,8 +216,52 @@ fn my_profile() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn get_counts() -> Result<serde_json::Value, String> {  let c = feed::open_db()?;
+fn get_counts() -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
   Ok(feed::channel_counts(&c))
+}
+
+/// 顶部原生菜单：应用 / 编辑。
+/// 编辑菜单不只是看着像 —— Windows 上 webview 里的 Ctrl+C/V 要有原生编辑菜单项
+/// 才会稳定生效，没有它复制 clone 命令那种操作会时灵时不灵。
+fn build_menu(app: &tauri::App) -> tauri::Result<()> {
+  use tauri::menu::{AboutMetadata, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
+  let handle = app.handle();
+
+  let about = PredefinedMenuItem::about(
+    handle,
+    Some("关于 Github Flow"),
+    Some(AboutMetadata {
+      name: Some("Github Flow".into()),
+      version: Some("0.1.0".into()),
+      copyright: Some("本地优先：行为日志只留这台机器，没有任何一条上传".into()),
+      ..Default::default()
+    }),
+  )?;
+  let app_menu = SubmenuBuilder::new(handle, "应用")
+    .item(&about)
+    .separator()
+    .item(&PredefinedMenuItem::hide(handle, Some("隐藏"))?)
+    .separator()
+    .item(&PredefinedMenuItem::quit(handle, Some("退出"))?)
+    .build()?;
+
+  // SubmenuBuilder 的 .undo()/.copy() 那几个不收标签（用的是系统默认文字），
+  // 要走中文就自己造 PredefinedMenuItem 再 .item() 塞进去。
+  let edit_menu = SubmenuBuilder::new(handle, "编辑")
+    .item(&PredefinedMenuItem::undo(handle, Some("撤销"))?)
+    .item(&PredefinedMenuItem::redo(handle, Some("重做"))?)
+    .separator()
+    .item(&PredefinedMenuItem::cut(handle, Some("剪切"))?)
+    .item(&PredefinedMenuItem::copy(handle, Some("复制"))?)
+    .item(&PredefinedMenuItem::paste(handle, Some("粘贴"))?)
+    .separator()
+    .item(&PredefinedMenuItem::select_all(handle, Some("全选"))?)
+    .build()?;
+
+  let menu = MenuBuilder::new(handle).items(&[&app_menu, &edit_menu]).build()?;
+  app.set_menu(menu)?;
+  Ok(())
 }
 
 fn main() {
@@ -226,6 +270,10 @@ fn main() {
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
+    .setup(|app| {
+      build_menu(app)?;
+      Ok(())
+    })
     .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
