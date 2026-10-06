@@ -1,16 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Github Flow：一条主干 + 一个并回来的分支，汇合之后流是绿的。
-       深色底用 GitHub 自己的 #1f2328，绿用 GitHub 的 #3fb950。 -->
-  <rect width="1024" height="1024" rx="224" fill="#1f2328"/>
+  <!--
+    Github Flow 图标（2026-10-06 重绘）。三个色号：黑 #0d1117 / 白 #ffffff / 绿 #3fb950。
 
-  <!-- 主干：汇合点以上是白的 -->
-  <path d="M352 324 L352 512" stroke="#ffffff" stroke-width="56" stroke-linecap="round" fill="none"/>
-  <!-- 汇合点以下是绿的，表示分支已经流进主干 -->
-  <path d="M352 512 L352 700" stroke="#3fb950" stroke-width="56" stroke-linecap="round" fill="none"/>
-  <!-- 分支：从右上那个节点弯下来汇入主干 -->
-  <path d="M672 324 C672 480 540 512 384 512" stroke="#3fb950" stroke-width="56" stroke-linecap="round" fill="none"/>
+    为什么是这个形状：要求是"结合 git 的图标 + 信息流的特征"，而前几轮把它做成了
+    "git 的标 + 一条流线"——两个图形叠在一起，任何尺寸下都要同时看懂两个形状，所以又乱又认不出。
+    这一版的顺序反过来了：**只有一种基本形（横条 = 信息流里的条目），菱形是这些横条长短不同的结果**，
+    不是另外画上去的。
 
-  <circle cx="352" cy="256" r="68" fill="#ffffff"/>
-  <circle cx="672" cy="256" r="68" fill="#3fb950"/>
-  <circle cx="352" cy="768" r="68" fill="#ffffff"/>
+    比例怎么来的（不是随手给的）：git 官方菱形满足 |x-512| + |y-512| <= 370（半对角线 370），
+    所以每一行的半宽 = 370 - 该行到中心的距离。行厚 92、行距 124、五行的中心在 y=264/388/512/636/760，
+    于是五行宽度是 244 / 492 / 740 / 492 / 244 —— 这个阶梯就是菱形的两条斜边。
+
+    为什么这样能扛住小尺寸：行距 124 在 16px 上是 1.94px、行厚 92 是 1.44px，所以 16px 上五行会糊成
+    一个实心菱形（"这是 git 那家的东西"还在），而 256px 上你才看得见"一条一条"和那条绿色。
+    大尺寸看到细节、小尺寸剩下剪影——图标要的就是这个降级方式。
+
+    绿色只有一条，给最上面那行（最新/最热的那一条）。想换别的变体（每行向右错位 = 斜着流过去、
+    或菱形轮廓 + 三条流线穿过），把候选页 measurements/icon-2026-10-06/preview9.html 里的
+    对应函数复制过来替换下面五条 rect 即可。
+  -->
+  <rect width="1024" height="1024" rx="224" fill="#0d1117"/>
+  <rect x="390" y="218" width="244" height="92" rx="46" fill="#3fb950"/>
+  <rect x="266" y="342" width="492" height="92" rx="46" fill="#ffffff"/>
+  <rect x="142" y="466" width="740" height="92" rx="46" fill="#ffffff"/>
+  <rect x="266" y="590" width="492" height="92" rx="46" fill="#ffffff"/>
+  <rect x="390" y="714" width="244" height="92" rx="46" fill="#ffffff"/>
 </svg>
