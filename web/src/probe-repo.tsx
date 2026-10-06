@@ -163,7 +163,6 @@ const has = (sel: string, s: string) =>
 const box = (title: string) =>
   [...document.querySelectorAll("section")].find((s) => (s.querySelector("h2")?.textContent ?? "") === title) as HTMLElement | undefined;
 const externalCalls = () => calls.filter((c) => c.startsWith("open_url"));
-const inAppCalls = () => calls.filter((c) => c.startsWith("open_in_app_window"));
 
 async function run() {
   const R: [string, boolean, string][] = [];
@@ -179,8 +178,9 @@ async function run() {
 
   // ---- 摆法：树在右栏、不做页签，导航是 GitHub 那一排
   const navLabels = [...document.querySelectorAll("nav button")].map((b) => (b.textContent ?? "").trim());
-  ok("导航是 GitHub 那一排（七个，且文件不是页签）",
-    ["概览", "Issues", "Pull requests", "Actions", "Projects", "Security", "Insights"].every((t) => navLabels.some((l) => l.startsWith(t))),
+  ok("导航是四项：概览 / Issues / Pull requests / Actions（文件不是页签）",
+    navLabels.length === 4 &&
+      ["概览", "Issues", "Pull requests", "Actions"].every((t) => navLabels.some((l) => l.startsWith(t))),
     navLabels.join(" | "));
   ok("树在右栏，进页面就在（不用点任何页签）", !!box("文件") && txt().includes(".github") && txt().includes("README.md"));
   ok("右栏的树与左栏的 README 同屏", !!box("文件") && !!box("README") && txt().includes("探针 README"));
@@ -227,17 +227,15 @@ async function run() {
   await click(one("nav button", "Actions"), 320);
   ok("Actions 页签在应用内列出运行", txt().includes("CI") && txt().includes("成功") && txt().includes("失败"));
 
-  // ---- 三个 REST 拿不到的：走应用内 WebView，不跳系统浏览器
-  await click(one("nav button", "Projects"), 420);
-  ok("Projects 走应用内窗口（URL 是 projects 页）",
-    inAppCalls().some((c) => c.includes("/projects")) && /GraphQL/.test(txt()), inAppCalls().join(","));
-  ok("三个不可得的项全程没跳系统浏览器", externalCalls().length === 0, externalCalls().join(","));
-  await click(one("nav button", "Insights"), 420);
-  ok("Insights 同样走应用内窗口", inAppCalls().some((c) => c.includes("/pulse")), inAppCalls().join(","));
+  // ---- 三个 REST 拿不到的不再出现在导航里（他 2026-10-06："先去掉吧"）
+  ok("导航里没有 Projects / Security / Insights",
+    !["Projects", "Security", "Insights"].some((t) => navLabels.some((l) => l.startsWith(t))),
+    navLabels.join(" | "));
 
   await click(one("nav button", "概览"), 320);
   ok("切回概览：树还在（没被卸载重取）", !!box("文件") && calls.filter((c) => c.startsWith("repo_tree")).length === 1,
     calls.filter((c) => c.startsWith("repo_tree")).join(","));
+  ok("整轮流程没有把用户甩到系统浏览器", externalCalls().length === 0, externalCalls().join(","));
 
   const keep = new URLSearchParams(location.search).has("keep");
   if (!keep) {

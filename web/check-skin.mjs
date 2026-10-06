@@ -162,9 +162,15 @@ const CHECKS = [
   },
   {
     id: "repo-nav",
-    what: "导航是 GitHub 仓库页那一排：概览 / Issues / Pull requests / Actions / Projects / Security / Insights（且文件仍不是页签）",
-    pass: ["概览", "Issues", "Pull requests", "Actions", "Projects", "Security", "Insights"].every((t) =>
-      new RegExp(`label: "${t}"`).test(detail)) && !/value: "files"/.test(detail),
+    what: "导航只留能做的四项：概览 / Issues / Pull requests / Actions（且文件仍不是页签）",
+    pass: ["概览", "Issues", "Pull requests", "Actions"].every((t) => new RegExp(`label: "${t}"`).test(detail)) &&
+      !/value: "files"/.test(detail),
+  },
+  {
+    id: "dropped-unadaptable",
+    what: "Projects / Security / Insights 从导航里去掉了（REST 拿不到：GraphQL-only / 要仓库权限），且留下「为什么去掉」的注释",
+    pass: !/label: "Projects"/.test(detail) && !/label: "Security"/.test(detail) && !/label: "Insights"/.test(detail) &&
+      !/REST_MISSING/.test(detail) && /先去掉/.test(detail),
   },
   {
     id: "in-app-item",
@@ -172,12 +178,6 @@ const CHECKS = [
     pass: /ItemDetail/.test(detail) && /opened \? \(/.test(detail) &&
       item.length > 0 && /issueDetail\(/.test(item) && /issueComments\(/.test(item) && /prFiles\(/.test(item) &&
       !/onOpen=/.test(detail),
-  },
-  {
-    id: "rest-fallback",
-    what: "Projects / Security / Insights 这三项 REST 拿不到时走**应用内 WebView**，并且页面里说清为什么拿不到",
-    pass: /REST_MISSING/.test(detail) && /openInside\(url, repoId\)/.test(detail) &&
-      /GraphQL/.test(detail) && /404/.test(detail) && /权限/.test(detail),
   },
   {
     id: "actions-panel",

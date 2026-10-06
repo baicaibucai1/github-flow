@@ -274,9 +274,6 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
           { value: "issues", label: "Issues", count: lists.issue?.count ?? null },
           { value: "pulls", label: "Pull requests", count: lists.pull?.count ?? null },
           { value: "actions", label: "Actions" },
-          { value: "projects", label: "Projects" },
-          { value: "security", label: "Security" },
-          { value: "insights", label: "Insights" },
         ]}
       />
 
@@ -401,77 +398,26 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
       ) : null}
 
       {tab === "actions" ? <ActionsPanel repoId={d.id!} fullName={d.full_name ?? ""} onNotice={onNotice} /> : null}
-
-      {REST_MISSING[tab] ? <RestMissing kind={tab} fullName={d.full_name ?? ""} repoId={d.id!} onNotice={onNotice} /> : null}
     </div>
   );
 }
 
 /**
- * REST 真拿不到的那三块。为什么要明说：这三项在 GitHub 的仓库页上有，用户会去找，
- * 找不到就会以为是我们漏了。所以列出来、说清为什么、并给一条**应用内**的路（WebView），
- * 而不是把人甩到系统浏览器。
+ * ⚠️ 曾经有 Projects / Security / Insights 三个导航项（GitHub 的仓库页上有），做法是点开走应用内 WebView。
+ * 2026-10-06 他看完说"既然有些功能没法适配，就先去掉吧"——所以**先去掉**：宁可少三个点了会失望的入口，
+ * 也不要在导航里摆一堆"打不开的页"。要加回来之前先读这段，并且记住三项各自的原因（实测过）：
+ *   Insights：流量/贡献者接口要 push 权限，匿名直接 401，看别人的仓库拿不到；
+ *   Projects：REST 的 /projects 已下线（404），新版只有 GraphQL 能给；
+ *   Security：代码扫描与依赖告警接口要仓库读写权限。
+ * 想真正支持它们，只有两条路：接 GraphQL（要用户自己的 token 且要权限），或者接受"这是 GitHub 自己的页面"。
  */
-const REST_MISSING: Record<string, { label: string; path: string; why: string }> = {
-  projects: {
-    label: "Projects",
-    path: "projects",
-    why: "GitHub 把 Projects 换成了只有 GraphQL 能给的新版，REST 的 /projects 已经下线（实测返回 404）。",
-  },
-  security: {
-    label: "Security",
-    path: "security",
-    why: "代码扫描、依赖告警这些接口要求仓库的读写权限，看别人的仓库拿不到（会返回 403/404）。",
-  },
-  insights: {
-    label: "Insights",
-    path: "pulse",
-    why: "流量、贡献者这类统计接口要求 push 权限；我们不是在替你登录 GitHub，所以拿不到。",
-  },
-};
 
-function RestMissing({
-  kind,
-  fullName,
-  repoId,
-  onNotice,
-}: {
-  kind: string;
-  fullName: string;
-  repoId: number;
-  onNotice: (m: string) => void;
-}) {
-  const it = REST_MISSING[kind];
-  const url = `https://github.com/${fullName}/${it.path}`;
-  useEffect(() => {
-    // 点了就打开（他选的是"保留导航项，点开走应用内 WebView"），窗口按 URL 复用，不会越开越多
-    openInside(url, repoId).catch((e) => onNotice("打不开应用内窗口：" + String(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
-  return (
-    <Box title={it.label} aside={<span>应用内打开</span>}>
-      <div className="flex flex-col gap-xs px-md py-md">
-        <p className="text-body">这一页应用内做不了：{it.why}</p>
-        <p className="text-caption text-muted-foreground">
-          已经用<b>应用内窗口</b>打开 GitHub 的那一页（不是系统浏览器，不会把你的浏览切走）。
-        </p>
-        <span className="flex items-center gap-xs">
-          <Button size="xs" variant="outline" onClick={() => openInside(url, repoId)}>
-            重新打开应用内窗口
-          </Button>
-          <Button size="xs" variant="ghost" onClick={() => openExternal(url).catch((e) => onNotice(String(e)))}>
-            改用系统浏览器
-          </Button>
-        </span>
-      </div>
-    </Box>
-  );
-}
 
 /**
  * Issue / PR 列表。GitHub 的 /issues 会把 PR 一起返回，所以"滤掉 PR"这件事在
- * Rust 侧做（feed.rs repo_list）；这里只管摆出来。点一条 = 交给系统浏览器，
- * 应用里不做评论、不做合并 —— 那是写操作，越过了只读的边界。
+ * Rust 侧做（feed.rs repo_list）；这里只管摆出来。
+ * 点一条 = 进**应用内**详情（ItemDetail），不再把 URL 交给系统浏览器（他 2026-10-06 的要求）；
+ * 应用里仍然不做评论、不做合并 —— 那是写操作，越过了只读的边界。
  */
 function ListPane({
   kind,
