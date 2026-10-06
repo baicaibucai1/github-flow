@@ -151,8 +151,22 @@ const CHECKS = [
   },
   {
     id: "repo-nav",
-    what: "详情页有 GitHub 那条下划线导航：概览 / 文件 / Issues / Pull requests",
-    pass: /概览/.test(detail) && /文件/.test(detail) && /Issues/.test(detail) && /Pull requests/.test(detail),
+    what: "详情页的导航只剩三个页签：概览 / Issues / Pull requests（文件不再是页签）",
+    pass: /概览/.test(detail) && /Issues/.test(detail) && /Pull requests/.test(detail) && !/value: "files"/.test(detail),
+  },
+  {
+    id: "tree-in-sidebar",
+    what: "文件树长在概览那一屏里（RepoTreeBox），选中文件后左栏切成预览（FilePreview）",
+    pass: (() => {
+      // 把"概览"那一支切出来看：树和预览必须都在它里面，而不是另起一个页签/一屏
+      const ov = detail.slice(detail.indexOf('tab === "overview"'), detail.indexOf('tab === "issues"'));
+      return ov.includes("RepoTreeBox") && ov.includes("FilePreview") && /f\.sel \?/.test(ov);
+    })(),
+  },
+  {
+    id: "preview-return",
+    what: "预览是双向的：能给回 README，不是一条单向路",
+    pass: /返回 README/.test(treex) && /backToReadme/.test(treex),
   },
   {
     id: "tree-collapse",

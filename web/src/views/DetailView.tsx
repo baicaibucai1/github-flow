@@ -15,7 +15,7 @@ import {
 import { logEvent } from "../lib/exposure";
 import { requestTranslate, setDbg, useApp, useDbg } from "../lib/store";
 import { Box, BoxEmpty, BoxRow, LangDot, UnderlineNav } from "../components/gh";
-import { RepoTree } from "../components/RepoTree";
+import { FilePreview, RepoTreeBox, useRepoFiles } from "../components/RepoTree";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@soda/ui";
 
 const chartConfig = { stars: { label: "这一周新增 star", color: "var(--primary)" } };
@@ -35,7 +35,14 @@ export type DetailViewProps = {
   onNotice: (msg: string) => void;
 };
 
-/** 照 GitHub 仓库页的形状：标题行 + 左主栏（README）+ 右侧栏（关于 / 语言 / 发布）。 */
+/**
+ * 照 GitHub 仓库页的形状：标题行 + 下划线导航 + 左主栏（README 或选中的文件）+ 右侧栏
+ * （文件树 / 关于 / star 曲线 / 语言 / release）。
+ *
+ * 文件树在右栏，不做成独立页签（他 2026-10-06 明确要求）：点开一个项目时，树是判断它值不值得
+ * 往下看的材料，藏到页签后面等于逼用户凭空决定要不要点。左栏在有选中文件时切成预览，右栏的
+ * 那些元信息块始终在，这样"正在看某个文件"和"这个项目到底什么情况"能同时看到。
+ */
 export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
   const { translated } = useApp();
   const dbg = useDbg();
@@ -43,14 +50,17 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
   const [err, setErr] = useState("");
   const rdRef = useRef<HTMLDivElement | null>(null);
 
-  // 概览 / 文件 / Issues / Pull requests。树和两个列表都是懒加载：
-  // 只看 README 的那次点开不该顺手多烧三次配额（列表缓存 10 分钟，树 1 小时）。
+  // 概览 / Issues / Pull requests。两个列表懒加载（缓存 10 分钟），
+  // 文件树跟着概览走（缓存 1 小时），所以一进详情页就取。
   const [tab, setTab] = useState("overview");
   const [lists, setLists] = useState<Record<string, ListResult>>({});
   const [listErr, setListErr] = useState<Record<string, string>>({});
   const [busyList, setBusyList] = useState("");
   const tabRef = useRef(tab);
   tabRef.current = tab;
+
+  // 文件树跟着概览走。详情本身还没到（或这项目库里根本没有）时不取，免得白烧一次树请求。
+  const f = useRepoFiles(repoId, !!d?.id);
 
   useEffect(() => {
     let alive = true;
@@ -260,14 +270,16 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
         onChange={setTab}
         items={[
           { value: "overview", label: "概览" },
-          { value: "files", label: "文件" },
           { value: "issues", label: "Issues", count: lists.issue?.count ?? null },
           { value: "pulls", label: "Pull requests", count: lists.pull?.count ?? null },
         ]}
       />
 
       {tab === "overview" ? (
-      <div className="grid gap-md lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid items-start gap-md lg:grid-cols-[minmax(0,1fr)_320px]">
+        {f.sel ? (
+          <FilePreview f={f} fullName={d.full_name ?? ""} onNotice={onNotice} />
+        ) : (
         <Box
           title="README"
           aside={<span>{String(d.readme_html || "").length} 字节 · 官方 API 渲染的 HTML</span>}
@@ -287,8 +299,11 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
             }}
           />
         </Box>
+        )}
 
         <div className="flex min-w-0 flex-col gap-md">
+          {/* 文件树在右栏最上面：开一个项目时先能看见"里面有什么" */}
+          <RepoTreeBox f={f} />
           <Box title="关于">
             <div className="flex flex-col gap-xs px-md py-md">
               <p className="text-body">
@@ -355,8 +370,6 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
         </div>
       </div>
       ) : null}
-
-      {tab === "files" ? <RepoTree repoId={d.id!} fullName={d.full_name ?? ""} onNotice={onNotice} /> : null}
 
       {tab === "issues" || tab === "pulls" ? (
         <ListPane
