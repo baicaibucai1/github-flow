@@ -7,6 +7,7 @@ import {
   log,
   n,
   openExternal,
+  openInside,
   relTime,
   repoList,
   type Detail,
@@ -16,18 +17,12 @@ import { logEvent } from "../lib/exposure";
 import { requestTranslate, setDbg, useApp, useDbg } from "../lib/store";
 import { Box, BoxEmpty, BoxRow, LangDot, UnderlineNav } from "../components/gh";
 import { FilePreview, RepoTreeBox, useRepoFiles } from "../components/RepoTree";
+import { ItemDetail } from "./ItemDetail";
+import { ActionsPanel } from "./ActionsPanel";
+import { sanitizeHtml } from "../lib/md";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@soda/ui";
 
 const chartConfig = { stars: { label: "这一周新增 star", color: "var(--primary)" } };
-
-/** 第三方 HTML 的兜底清洗：脚本与内联事件一律去掉，外链强制新窗口 */
-function sanitize(html: string): string {
-  return String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/<a /gi, '<a target="_blank" rel="noreferrer" ');
-}
 
 export type DetailViewProps = {
   repoId: number;
@@ -50,12 +45,14 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
   const [err, setErr] = useState("");
   const rdRef = useRef<HTMLDivElement | null>(null);
 
-  // 概览 / Issues / Pull requests。两个列表懒加载（缓存 10 分钟），
-  // 文件树跟着概览走（缓存 1 小时），所以一进详情页就取。
+  // 概览 / Issues / Pull requests / Actions + 三个 REST 拿不到的（走应用内 WebView）。
+  // 列表与详情都懒加载（缓存 10 分钟），文件树跟着概览走（缓存 1 小时），所以一进详情页就取。
   const [tab, setTab] = useState("overview");
   const [lists, setLists] = useState<Record<string, ListResult>>({});
   const [listErr, setListErr] = useState<Record<string, string>>({});
   const [busyList, setBusyList] = useState("");
+  // 打开的那条 issue / PR（点开不许跳浏览器，就在这里看）
+  const [opened, setOpened] = useState<{ kind: "issue" | "pull"; number: number } | null>(null);
   const tabRef = useRef(tab);
   tabRef.current = tab;
 
@@ -135,6 +132,7 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
     setTab("overview");
     setLists({});
     setListErr({});
+    setOpened(null);
   }, [repoId]);
 
   const kindOf = (t: string) => (t === "issues" ? "issue" : t === "pulls" ? "pull" : "");
@@ -267,11 +265,18 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
 
       <UnderlineNav
         value={tab}
-        onChange={setTab}
+        onChange={(v) => {
+          setOpened(null);
+          setTab(v);
+        }}
         items={[
           { value: "overview", label: "概览" },
           { value: "issues", label: "Issues", count: lists.issue?.count ?? null },
           { value: "pulls", label: "Pull requests", count: lists.pull?.count ?? null },
+          { value: "actions", label: "Actions" },
+          { value: "projects", label: "Projects" },
+          { value: "security", label: "Security" },
+          { value: "insights", label: "Insights" },
         ]}
       />
 
@@ -295,7 +300,7 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
               openExternal(a.getAttribute("href") ?? "").catch((err) => onNotice("没打开这个链接：" + String(err)));
             }}
             dangerouslySetInnerHTML={{
-              __html: d.readme_html ? sanitize(d.readme_html) : "<i>取不到 README</i>",
+              __html: d.readme_html ? sanitizeHtml(d.readme_html) : "<i>取不到 README</i>",
             }}
           />
         </Box>
@@ -372,16 +377,94 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
       ) : null}
 
       {tab === "issues" || tab === "pulls" ? (
-        <ListPane
-          kind={tab === "issues" ? "issue" : "pull"}
-          fullName={d.full_name ?? ""}
-          res={lists[tab === "issues" ? "issue" : "pull"]}
-          err={listErr[tab === "issues" ? "issue" : "pull"]}
-          busy={busyList === (tab === "issues" ? "issue" : "pull")}
-          onOpen={(u) => openExternal(u).catch((e) => onNotice("没打开：" + String(e)))}
-        />
+        opened ? (
+          <ItemDetail
+            repoId={d.id!}
+            fullName={d.full_name ?? ""}
+            number={opened.number}
+            kind={opened.kind}
+            onBack={() => setOpened(null)}
+            onNotice={onNotice}
+          />
+        ) : (
+          <ListPane
+            kind={tab === "issues" ? "issue" : "pull"}
+            fullName={d.full_name ?? ""}
+            repoId={d.id!}
+            res={lists[tab === "issues" ? "issue" : "pull"]}
+            err={listErr[tab === "issues" ? "issue" : "pull"]}
+            busy={busyList === (tab === "issues" ? "issue" : "pull")}
+            onPick={(number) => setOpened({ kind: tab === "issues" ? "issue" : "pull", number })}
+            onNotice={onNotice}
+          />
+        )
       ) : null}
+
+      {tab === "actions" ? <ActionsPanel repoId={d.id!} fullName={d.full_name ?? ""} onNotice={onNotice} /> : null}
+
+      {REST_MISSING[tab] ? <RestMissing kind={tab} fullName={d.full_name ?? ""} repoId={d.id!} onNotice={onNotice} /> : null}
     </div>
+  );
+}
+
+/**
+ * REST 真拿不到的那三块。为什么要明说：这三项在 GitHub 的仓库页上有，用户会去找，
+ * 找不到就会以为是我们漏了。所以列出来、说清为什么、并给一条**应用内**的路（WebView），
+ * 而不是把人甩到系统浏览器。
+ */
+const REST_MISSING: Record<string, { label: string; path: string; why: string }> = {
+  projects: {
+    label: "Projects",
+    path: "projects",
+    why: "GitHub 把 Projects 换成了只有 GraphQL 能给的新版，REST 的 /projects 已经下线（实测返回 404）。",
+  },
+  security: {
+    label: "Security",
+    path: "security",
+    why: "代码扫描、依赖告警这些接口要求仓库的读写权限，看别人的仓库拿不到（会返回 403/404）。",
+  },
+  insights: {
+    label: "Insights",
+    path: "pulse",
+    why: "流量、贡献者这类统计接口要求 push 权限；我们不是在替你登录 GitHub，所以拿不到。",
+  },
+};
+
+function RestMissing({
+  kind,
+  fullName,
+  repoId,
+  onNotice,
+}: {
+  kind: string;
+  fullName: string;
+  repoId: number;
+  onNotice: (m: string) => void;
+}) {
+  const it = REST_MISSING[kind];
+  const url = `https://github.com/${fullName}/${it.path}`;
+  useEffect(() => {
+    // 点了就打开（他选的是"保留导航项，点开走应用内 WebView"），窗口按 URL 复用，不会越开越多
+    openInside(url, repoId).catch((e) => onNotice("打不开应用内窗口：" + String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+  return (
+    <Box title={it.label} aside={<span>应用内打开</span>}>
+      <div className="flex flex-col gap-xs px-md py-md">
+        <p className="text-body">这一页应用内做不了：{it.why}</p>
+        <p className="text-caption text-muted-foreground">
+          已经用<b>应用内窗口</b>打开 GitHub 的那一页（不是系统浏览器，不会把你的浏览切走）。
+        </p>
+        <span className="flex items-center gap-xs">
+          <Button size="xs" variant="outline" onClick={() => openInside(url, repoId)}>
+            重新打开应用内窗口
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => openExternal(url).catch((e) => onNotice(String(e)))}>
+            改用系统浏览器
+          </Button>
+        </span>
+      </div>
+    </Box>
   );
 }
 
@@ -396,24 +479,29 @@ function ListPane({
   res,
   err,
   busy,
-  onOpen,
+  repoId,
+  onPick,
+  onNotice,
 }: {
   kind: "issue" | "pull";
   fullName: string;
   res?: ListResult;
   err?: string;
   busy: boolean;
-  onOpen: (u: string) => void;
+  repoId: number;
+  onPick: (number: number) => void;
+  onNotice: (m: string) => void;
 }) {
   const label = kind === "issue" ? "Issues" : "Pull requests";
+  const listUrl = `https://github.com/${fullName}/${kind === "issue" ? "issues" : "pulls"}`;
   return (
     <Box
       title={label}
       aside={
         <span className="flex items-center gap-xs">
           {res ? `${res.count} 条 · 只列 open 的最新 30 条` : ""}
-          <Button size="xs" variant="ghost" onClick={() => onOpen(`https://github.com/${fullName}/${kind === "issue" ? "issues" : "pulls"}`)}>
-            在 GitHub 打开{label}
+          <Button size="xs" variant="ghost" onClick={() => openInside(listUrl, repoId).catch((e) => onNotice(String(e)))}>
+            在应用内看{label}（含已关闭、筛选）
           </Button>
         </span>
       }
@@ -431,10 +519,8 @@ function ListPane({
       ) : (
         res.items.map((it) => (
           <BoxRow key={it.number}>
-            <button
-              className="flex w-full flex-col gap-2xs text-start hover:underline"
-              onClick={() => onOpen(`https://github.com/${fullName}/${kind === "issue" ? "issues" : "pull"}/${it.number}`)}
-            >
+            {/* 点开进应用内详情，不再把 URL 交给系统浏览器（他 2026-10-06 的要求） */}
+            <button className="flex w-full flex-col gap-2xs text-start hover:underline" onClick={() => onPick(it.number)}>
               <span className="flex flex-wrap items-center gap-xs">
                 <b className="text-label">{it.title}</b>
                 {kind === "pull" && it.draft ? <Badge variant="outline">draft</Badge> : null}

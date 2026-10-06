@@ -26,6 +26,11 @@ const rust = readFileSync(join(web, "..", "src-tauri", "src", "feed.rs"), "utf8"
 const mainrs = readFileSync(join(web, "..", "src-tauri", "src", "main.rs"), "utf8");
 const bridge = readFileSync(join(web, "src", "lib", "bridge.ts"), "utf8");
 const detail = readFileSync(join(web, "src", "views", "DetailView.tsx"), "utf8");
+const item = existsSync(join(web, "src", "views", "ItemDetail.tsx"))
+  ? readFileSync(join(web, "src", "views", "ItemDetail.tsx"), "utf8") : "";
+const actions = existsSync(join(web, "src", "views", "ActionsPanel.tsx"))
+  ? readFileSync(join(web, "src", "views", "ActionsPanel.tsx"), "utf8") : "";
+const mdlib = existsSync(join(web, "src", "lib", "md.ts")) ? readFileSync(join(web, "src", "lib", "md.ts"), "utf8") : "";
 const treex = existsSync(join(web, "src", "components", "RepoTree.tsx"))
   ? readFileSync(join(web, "src", "components", "RepoTree.tsx"), "utf8") : "";
 
@@ -54,6 +59,12 @@ const PAGES = [
     name: "仓库文件树与预览",
     need: ["二进制文件，不做预览", "已截断", "在 GitHub 打开"],
     ban: [/dangerouslySetInnerHTML/],
+  },
+  {
+    file: "src/views/ItemDetail.tsx",
+    name: "应用内的 issue / PR 详情",
+    need: ["返回列表", "描述", "评论", "变更", "在浏览器打开", "应用内浏览"],
+    ban: [],
   },
   {
     file: "src/views/SettingsView.tsx",
@@ -151,8 +162,55 @@ const CHECKS = [
   },
   {
     id: "repo-nav",
-    what: "详情页的导航只剩三个页签：概览 / Issues / Pull requests（文件不再是页签）",
-    pass: /概览/.test(detail) && /Issues/.test(detail) && /Pull requests/.test(detail) && !/value: "files"/.test(detail),
+    what: "导航是 GitHub 仓库页那一排：概览 / Issues / Pull requests / Actions / Projects / Security / Insights（且文件仍不是页签）",
+    pass: ["概览", "Issues", "Pull requests", "Actions", "Projects", "Security", "Insights"].every((t) =>
+      new RegExp(`label: "${t}"`).test(detail)) && !/value: "files"/.test(detail),
+  },
+  {
+    id: "in-app-item",
+    what: "点列表里的一条进应用内详情（ItemDetail），行点击不再把 URL 交给系统浏览器",
+    pass: /ItemDetail/.test(detail) && /opened \? \(/.test(detail) &&
+      item.length > 0 && /issueDetail\(/.test(item) && /issueComments\(/.test(item) && /prFiles\(/.test(item) &&
+      !/onOpen=/.test(detail),
+  },
+  {
+    id: "rest-fallback",
+    what: "Projects / Security / Insights 这三项 REST 拿不到时走**应用内 WebView**，并且页面里说清为什么拿不到",
+    pass: /REST_MISSING/.test(detail) && /openInside\(url, repoId\)/.test(detail) &&
+      /GraphQL/.test(detail) && /404/.test(detail) && /权限/.test(detail),
+  },
+  {
+    id: "actions-panel",
+    what: "Actions 面板在应用内读运行列表（日志要权限，所以点一条走应用内窗口）",
+    pass: actions.length > 0 && /actionsRuns\(/.test(actions) && /openInside\(/.test(actions),
+  },
+  {
+    id: "md-shared",
+    what: "README 与 issue/PR 正文共用同一个清洗函数（只在一条路径上补清洗迟早会漏）",
+    pass: mdlib.length > 0 && /export function sanitizeHtml/.test(mdlib) &&
+      /sanitizeHtml\(d\.readme_html\)/.test(detail) && /sanitizeHtml\(body\)/.test(item),
+  },
+  {
+    id: "html-media",
+    what: "issue/PR 正文走官方渲染的 html 媒体类型（不引 markdown 库、也不抓页面）",
+    pass: /application\/vnd\.github\.html\+json/.test(rust) && /fn get_json_as/.test(rust),
+  },
+  {
+    id: "item-sanitized",
+    what: "应用内详情里每一处 dangerouslySetInnerHTML 都套了清洗（三处正文：描述、评论、PR 描述）",
+    pass: (() => {
+      const n = (item.match(/dangerouslySetInnerHTML/g) || []).length;
+      const s = (item.match(/sanitizeHtml\(/g) || []).length;
+      return n > 0 && s >= n;
+    })(),
+  },
+  {
+    id: "rust-registered-2",
+    what: "五条新命令（issue_detail / issue_comments / pr_detail / pr_files / actions_runs）都在 Rust 侧注册了",
+    pass: ["issue_detail", "issue_comments", "pr_detail", "pr_files", "actions_runs"].every(
+      (c) => new RegExp(`#\\[tauri::command\\][\\s\\S]{0,140}fn ${c}\\(`).test(mainrs) &&
+        new RegExp(`\\b${c}\\b`).test(mainrs.slice(mainrs.indexOf("generate_handler!")))
+    ),
   },
   {
     id: "tree-in-sidebar",
@@ -253,6 +311,27 @@ if (liveArg) {
         inum.size > 0 && pnum.size > 0 && mixed.length === 0]);
       const again = run(["tree", String(id)]);
       LIVE.push(["第二次读树命中缓存，不再打 API", again.includes("命中 1 小时缓存")]);
+
+      // ---- 应用内详情的取数：issue 正文、评论、PR 改动量与 diff、Actions 运行
+      // 用 #1 是因为它是 react 最早的那条（2013 年的 PR，7 条评论），不会明天就没了
+      const iss = raw(["issue", String(id), "1"]);
+      LIVE.push([`issue 详情拿得到官方渲染的正文（${(iss.v?.body_html ?? "").length} 字符）`,
+        !!iss.v && iss.v.body_html.length > 0 && !!iss.v.title && iss.v.number === 1]);
+      // 空正文的评论在真实数据里是存在的（实测 react/react#1 的第 7 条：body 字段整个不存在、
+      // body_html 是空串），所以这里要求"都有作者与时间 + 至少一半有正文"，别把真实数据当脏数据
+      const cm = raw(["comments", String(id), "1"]);
+      const withBody = (cm.v?.items ?? []).filter((x) => (x.body_html ?? "").length > 0).length;
+      LIVE.push([`评论读得到（${cm.v?.count ?? 0} 条，其中 ${withBody} 条有正文，每条都有作者）`,
+        !!cm.v && cm.v.count > 0 && cm.v.items.every((x) => !!x.author && !!x.created_at) && withBody >= cm.v.count / 2]);
+      const pr = raw(["pr", String(id), "1"]);
+      LIVE.push([`PR 详情带改动量（+${pr.v?.additions ?? 0}/-${pr.v?.deletions ?? 0}，${pr.v?.changed_files ?? 0} 文件）`,
+        !!pr.v && pr.v.additions > 0 && pr.v.changed_files > 0 && !!pr.v.head && !!pr.v.base]);
+      const fl = raw(["files", String(id), "1"]);
+      LIVE.push([`变更文件的 unified diff 拿得到（${fl.v?.count ?? 0} 个文件，有 patch）`,
+        !!fl.v && fl.v.items.length > 0 && fl.v.items.some((f) => (f.patch ?? "").length > 0)]);
+      const ac = raw(["actions", String(id)]);
+      LIVE.push([`Actions 运行列表拿得到（共 ${ac.v?.total ?? 0} 次，取回 ${ac.v?.count ?? 0} 条）`,
+        !!ac.v && ac.v.total > 0 && ac.v.items.length > 0 && !!ac.v.items[0].name]);
     } catch (e) {
       LIVE.push(["live 跑通了（上面若有 FAIL 是这条没执行）", false]);
       console.log("  live 异常：" + String(e).slice(0, 200));

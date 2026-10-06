@@ -132,35 +132,87 @@ fn main() {
     }
     return;
   }
-  // ---- 仓库视图的三条：文件树 / 单文件 / issue 与 PR 列表
-  // 拿命令行先验一遍，是因为这三条要走网络与缓存；先看数据对不对，再去做界面，
-  // 不然界面出问题时分不清是前端还是取数。id 用库里的 repo.id（下面 list 命令能看到）。
-  if ["tree", "file", "list"].contains(&args.get(1).map(|s| s.as_str()).unwrap_or("")) {
+  // ---- 仓库视图与详情：文件树 / 单文件 / 列表 / issue / PR / 评论 / diff / Actions
+  // 拿命令行先验一遍，是因为这些都要走网络与缓存；先看数据对不对，再去做界面，
+  // 不然界面出问题时分不清是前端还是取数。id 用库里的 repo.id（上面 repos 命令能看到）。
+  if ["tree", "file", "list", "issue", "pr", "comments", "files", "actions"]
+    .contains(&args.get(1).map(|s| s.as_str()).unwrap_or(""))
+  {
     let conn = feed::open_db().expect("打不开数据库");
     let id: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
     let sub = args.get(1).unwrap().as_str();
+    let arg3 = args.get(3).map(|s| s.as_str()).unwrap_or("");
+    let num: i64 = arg3.parse().unwrap_or(0);
     let emit = &mut |m: String| println!("{m}");
     let r = match sub {
       "tree" => feed::repo_tree(&conn, id, emit),
-      "file" => feed::repo_file_read(&conn, id, args.get(3).map(|s| s.as_str()).unwrap_or("README.md"), emit),
-      _ => feed::repo_list(&conn, id, args.get(3).map(|s| s.as_str()).unwrap_or("issue"), emit),
+      "file" => feed::repo_file_read(&conn, id, if arg3.is_empty() { "README.md" } else { arg3 }, emit),
+      "list" => feed::repo_list(&conn, id, if arg3.is_empty() { "issue" } else { arg3 }, emit),
+      "issue" => feed::issue_detail(&conn, id, num, emit),
+      "pr" => feed::pr_detail(&conn, id, num, emit),
+      "comments" => feed::issue_comments(&conn, id, num, emit),
+      "files" => feed::pr_files(&conn, id, num, emit),
+      _ => feed::actions_runs(&conn, id, emit),
     };
     match r {
       Ok(v) => {
-        if sub == "tree" {
-          println!("分支={} 条目={} 截断={}", v["branch"], v["count"], v["truncated"]);
-          for e in v["entries"].as_array().unwrap_or(&vec![]).iter().take(15) {
-            println!("  {}{}", e["path"].as_str().unwrap_or(""), if e["dir"].as_bool().unwrap_or(false) { "/" } else { "" });
+        match sub {
+          "tree" => {
+            println!("分支={} 条目={} 截断={}", v["branch"], v["count"], v["truncated"]);
+            for e in v["entries"].as_array().unwrap_or(&vec![]).iter().take(15) {
+              println!("  {}{}", e["path"].as_str().unwrap_or(""), if e["dir"].as_bool().unwrap_or(false) { "/" } else { "" });
+            }
           }
-        } else if sub == "file" {
-          println!("path={} 字节={} 二进制={} 截断={}", v["path"], v["bytes"], v["binary"], v["truncated"]);
-          for l in v["text"].as_str().unwrap_or("").lines().take(12) { println!("  | {l}"); }
-        } else {
-          println!("kind={} 条数={}", v["kind"], v["count"]);
-          for it in v["items"].as_array().unwrap_or(&vec![]).iter().take(10) {
-            println!("  #{} {} —— {}{} [{}]", it["number"], it["title"].as_str().unwrap_or(""),
-              it["author"].as_str().unwrap_or(""), if it["draft"].as_bool().unwrap_or(false) { " (draft)" } else { "" },
-              it["labels"].as_array().map(|a| a.len()).unwrap_or(0));
+          "file" => {
+            println!("path={} 字节={} 二进制={} 截断={}", v["path"], v["bytes"], v["binary"], v["truncated"]);
+            for l in v["text"].as_str().unwrap_or("").lines().take(12) { println!("  | {l}"); }
+          }
+          "list" => {
+            println!("kind={} 条数={}", v["kind"], v["count"]);
+            for it in v["items"].as_array().unwrap_or(&vec![]).iter().take(10) {
+              println!("  #{} {} —— {}{} [{}]", it["number"], it["title"].as_str().unwrap_or(""),
+                it["author"].as_str().unwrap_or(""), if it["draft"].as_bool().unwrap_or(false) { " (draft)" } else { "" },
+                it["labels"].as_array().map(|a| a.len()).unwrap_or(0));
+            }
+          }
+          "issue" => {
+            println!("#{} [{}] {} —— {} | 正文 {} 字符 | 评论 {} | label {} 个{}",
+              v["number"], v["state"], v["title"].as_str().unwrap_or(""), v["author"].as_str().unwrap_or(""),
+              v["body_html"].as_str().map(|s| s.chars().count()).unwrap_or(0), v["comments"],
+              v["labels"].as_array().map(|a| a.len()).unwrap_or(0),
+              if v["is_pull"].as_bool().unwrap_or(false) { " | 这个号其实是 PR" } else { "" });
+          }
+          "pr" => {
+            println!("#{} [{}]{} {} —— +{} -{} / {} 文件 / {} commit / review {} | 正文 {} 字符",
+              v["number"], v["state"], if v["draft"].as_bool().unwrap_or(false) { "(draft)" } else { "" },
+              v["title"].as_str().unwrap_or(""), v["additions"], v["deletions"], v["changed_files"], v["commits"],
+              v["review_comments"], v["body_html"].as_str().map(|s| s.chars().count()).unwrap_or(0));
+            println!("  {} → {} | merged={} mergeable={}", v["head"], v["base"], v["merged"], v["mergeable_state"]);
+          }
+          "comments" => {
+            println!("评论 {} 条", v["count"]);
+            for c in v["items"].as_array().unwrap_or(&vec![]).iter().take(5) {
+              println!("  {} ({}) 正文 {} 字符", c["author"].as_str().unwrap_or(""),
+                c["association"].as_str().unwrap_or(""), c["body_html"].as_str().map(|s| s.chars().count()).unwrap_or(0));
+            }
+          }
+          "files" => {
+            println!("变更 {} 个文件（截断={}）", v["count"], v["truncated"]);
+            for f in v["items"].as_array().unwrap_or(&vec![]).iter().take(8) {
+              println!("  [{}] {} +{} -{} patch {} 字符{}{}", f["status"].as_str().unwrap_or(""),
+                f["filename"].as_str().unwrap_or(""), f["additions"], f["deletions"],
+                f["patch"].as_str().map(|s| s.chars().count()).unwrap_or(0),
+                if f["binary"].as_bool().unwrap_or(false) { " (无 patch：二进制或过大)" } else { "" },
+                if f["patch_truncated"].as_bool().unwrap_or(false) { " [已截断]" } else { "" });
+            }
+          }
+          _ => {
+            println!("运行 {} 次，取回 {} 条", v["total"], v["count"]);
+            for r0 in v["items"].as_array().unwrap_or(&vec![]).iter().take(8) {
+              println!("  #{} {} [{}:{}] {} {} → {}", r0["run_number"], r0["name"].as_str().unwrap_or(""),
+                r0["status"].as_str().unwrap_or(""), r0["conclusion"].as_str().unwrap_or(""),
+                r0["event"].as_str().unwrap_or(""), r0["branch"].as_str().unwrap_or(""), r0["title"].as_str().unwrap_or(""));
+            }
           }
         }
         // 机器可读的一行：check-skin.mjs --live 靠它做行为断言（人看的摘要在上面）

@@ -229,6 +229,95 @@ export function repoList(id: number, kind: "issue" | "pull"): Promise<ListResult
   return call<ListResult>("repo_list", { repoId: id, kind });
 }
 
+/**
+ * 应用内的 issue / PR / Actions（点开详情不再跳系统浏览器）。
+ * 正文都是 GitHub 官方渲染好的 HTML（`body_html`，走 html+json 媒体类型），所以前端不引 markdown 库。
+ */
+export type Label = { name: string; color: string };
+export type IssueDetail = {
+  number: number;
+  is_pull: boolean;
+  title: string;
+  url: string;
+  state: string;
+  author: string;
+  created_at: string;
+  closed_at: string;
+  comments: number;
+  labels: Label[];
+  body_html: string;
+  reactions: number;
+  error?: string;
+};
+export type Comment = { author: string; association: string; created_at: string; body_html: string };
+export type CommentsResult = { count: number; items: Comment[]; error?: string };
+export type PrDetail = {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  draft: boolean;
+  merged: boolean;
+  mergeable_state: string;
+  author: string;
+  created_at: string;
+  base: string;
+  head: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  commits: number;
+  review_comments: number;
+  labels: Label[];
+  body_html: string;
+  error?: string;
+};
+export type ChangedFile = {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch: string;
+  patch_truncated: boolean;
+  binary: boolean;
+};
+export type FilesResult = { count: number; truncated: boolean; items: ChangedFile[]; error?: string };
+export type Run = {
+  id: number;
+  name: string;
+  title: string;
+  status: string;
+  conclusion: string;
+  event: string;
+  branch: string;
+  run_number: number;
+  created_at: string;
+  url: string;
+};
+export type RunsResult = { total: number; count: number; items: Run[]; error?: string };
+
+export function issueDetail(id: number, number: number): Promise<IssueDetail> {
+  return call<IssueDetail>("issue_detail", { repoId: id, number });
+}
+export function issueComments(id: number, number: number): Promise<CommentsResult> {
+  return call<CommentsResult>("issue_comments", { repoId: id, number });
+}
+export function prDetail(id: number, number: number): Promise<PrDetail> {
+  return call<PrDetail>("pr_detail", { repoId: id, number });
+}
+export function prFiles(id: number, number: number): Promise<FilesResult> {
+  return call<FilesResult>("pr_files", { repoId: id, number });
+}
+export function actionsRuns(id: number): Promise<RunsResult> {
+  return call<RunsResult>("actions_runs", { repoId: id });
+}
+
+/** 应用内浏览：REST 真拿不到的页面（Projects/Security/Insights）走这个，绝不甩给系统浏览器 */
+export function openInside(url: string, repoId?: number): Promise<string> {
+  return call<string>("open_in_app_window", { url, repoId });
+}
+
 /** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
 

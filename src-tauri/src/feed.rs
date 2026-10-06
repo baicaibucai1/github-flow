@@ -142,11 +142,15 @@ impl Http {
     emit(format!("[quota] 起始 remaining: core={} search={}", self.core_left, self.search_left));
   }
 
-  fn get_json<T: serde::de::DeserializeOwned>(
+  /// 与 get_json 同一套配额记账，只是 Accept 可换：issue / PR 的正文要靠
+  /// `application/vnd.github.html+json` 才返回**官方渲染好的 HTML**（body_html），
+  /// 这样应用内不用引 markdown 库，也不用抓页面（跟 README 那条路一致）。
+  fn get_json_as<T: serde::de::DeserializeOwned>(
     &mut self,
     path: &str,
     q: &BTreeMap<&str, String>,
     kind: &str,
+    accept: &str,
     emit: &mut dyn FnMut(String),
   ) -> Option<T> {
     let budget = if kind == "search" { self.search_left } else { self.core_left };
@@ -156,7 +160,7 @@ impl Http {
     }
     let mut req = G!(&format!("{API}{path}"))
       .header("User-Agent", UA)
-      .header("Accept", "application/vnd.github+json");
+      .header("Accept", accept);
     // 有 token 就带上：额度从匿名 60/h 变 5000/h，并解锁 /user/starred 这类只认登录态的入口
     if let Some(t) = &self.tok {
       req = req.header("Authorization", format!("Bearer {t}"));
@@ -184,6 +188,16 @@ impl Http {
         None
       }
     }
+  }
+
+  fn get_json<T: serde::de::DeserializeOwned>(
+    &mut self,
+    path: &str,
+    q: &BTreeMap<&str, String>,
+    kind: &str,
+    emit: &mut dyn FnMut(String),
+  ) -> Option<T> {
+    self.get_json_as(path, q, kind, "application/vnd.github+json", emit)
   }
 }
 
@@ -1647,6 +1661,197 @@ pub fn repo_list(conn: &Connection, id: i64, kind: &str, emit: &mut dyn FnMut(St
   let out = serde_json::json!({ "kind": kind, "items": items, "count": items.len() });
   cache_put(conn, id, "", kind, &out.to_string());
   emit(format!("[{kind}] {} 条", items.len()));
+  Ok(out)
+}
+
+// ================================================================ 应用内的 issue / PR / Actions
+// 边界（2026-10-06 他的要求）：点 issue / PR **不许跳系统浏览器**，能在应用内看的一律在应用内看；
+// 真做不了的（Insights 要仓库权限、Projects 只有 GraphQL、Security 要权限）才退回**应用内 WebView**。
+// 这一层仍然是只读：不发评论、不合并、不 resolve。
+//
+// 正文一律走 `application/vnd.github.html+json` 拿 body_html（跟 README 同一条路，不引 markdown 库）；
+// 缓存按"变不变"分档：详情与评论 10 分钟、diff 1 小时、Actions 5 分钟。
+
+const ACCEPT_HTML: &str = "application/vnd.github.html+json";
+
+fn gh_full(conn: &Connection, id: i64) -> Result<String, String> {
+  repo_full(conn, id).ok_or_else(|| "库里没有这个项目".to_string())
+}
+
+fn labels_of(v: &serde_json::Value) -> Vec<serde_json::Value> {
+  v["labels"].as_array().map(|a| {
+    a.iter().filter_map(|l| {
+      let name = l["name"].as_str()?;
+      Some(serde_json::json!({ "name": name, "color": l["color"].as_str().unwrap_or("") }))
+    }).collect()
+  }).unwrap_or_default()
+}
+
+/// 单条 issue 的详情。注意 GitHub 的 `/issues/{n}` 对 PR 号也成立（返回它的 issue 侧面），
+/// 所以这里给出 `is_pull`，前端据此决定要不要再去拉 diff。
+pub fn issue_detail(conn: &Connection, id: i64, number: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = gh_full(conn, id)?;
+  let key = format!("#{number}");
+  if let Some(c) = cache_get(conn, id, &key, "issue", 600) {
+    emit("[issue] 命中 10 分钟缓存".into());
+    return serde_json::from_str(&c).map_err(|e| e.to_string());
+  }
+  let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  h.probe(emit);
+  let v: Option<serde_json::Value> =
+    h.get_json_as(&format!("/repos/{full}/issues/{number}"), &BTreeMap::new(), "core", ACCEPT_HTML, emit);
+  let v = v.ok_or("取不到这条 issue（可能已删、或配额不够）")?;
+  let out = serde_json::json!({
+    "number": v["number"],
+    "is_pull": !v["pull_request"].is_null(),
+    "title": v["title"].as_str().unwrap_or(""),
+    "url": v["html_url"].as_str().unwrap_or(""),
+    "state": v["state"].as_str().unwrap_or(""),
+    "state_reason": v["state_reason"].as_str().unwrap_or(""),
+    "author": v["user"]["login"].as_str().unwrap_or(""),
+    "created_at": v["created_at"].as_str().unwrap_or(""),
+    "closed_at": v["closed_at"].as_str().unwrap_or(""),
+    "comments": v["comments"].as_i64().unwrap_or(0),
+    "labels": labels_of(&v),
+    "body_html": v["body_html"].as_str().unwrap_or(""),
+    "reactions": v["reactions"]["total_count"].as_i64().unwrap_or(0),
+  });
+  cache_put(conn, id, &key, "issue", &out.to_string());
+  emit(format!("[issue] #{number}「{}」正文 {} 字符", out["title"].as_str().unwrap_or(""), out["body_html"].as_str().map(|s| s.chars().count()).unwrap_or(0)));
+  Ok(out)
+}
+
+/// 一条 issue / PR 的评论（PR 与 issue 共用这个端点）
+pub fn issue_comments(conn: &Connection, id: i64, number: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = gh_full(conn, id)?;
+  let key = format!("#{number}");
+  if let Some(c) = cache_get(conn, id, &key, "comments", 600) {
+    emit("[comments] 命中 10 分钟缓存".into());
+    return serde_json::from_str(&c).map_err(|e| e.to_string());
+  }
+  let mut q = BTreeMap::new();
+  q.insert("per_page", "100".to_string());
+  let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  h.probe(emit);
+  let v: Option<Vec<serde_json::Value>> =
+    h.get_json_as(&format!("/repos/{full}/issues/{number}/comments"), &q, "core", ACCEPT_HTML, emit);
+  let rows = v.unwrap_or_default();
+  let items: Vec<serde_json::Value> = rows.iter().map(|c| serde_json::json!({
+    "author": c["user"]["login"].as_str().unwrap_or(""),
+    "association": c["author_association"].as_str().unwrap_or(""),
+    "created_at": c["created_at"].as_str().unwrap_or(""),
+    "body_html": c["body_html"].as_str().unwrap_or(""),
+  })).collect();
+  let out = serde_json::json!({ "count": items.len(), "items": items });
+  cache_put(conn, id, &key, "comments", &out.to_string());
+  emit(format!("[comments] #{number} {} 条", items.len()));
+  Ok(out)
+}
+
+/// PR 的主体信息：改动量、分支、草稿/合并状态。正文同样用 html 媒体类型
+pub fn pr_detail(conn: &Connection, id: i64, number: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = gh_full(conn, id)?;
+  let key = format!("#{number}");
+  if let Some(c) = cache_get(conn, id, &key, "pr", 600) {
+    emit("[pr] 命中 10 分钟缓存".into());
+    return serde_json::from_str(&c).map_err(|e| e.to_string());
+  }
+  let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  h.probe(emit);
+  let v: Option<serde_json::Value> =
+    h.get_json_as(&format!("/repos/{full}/pulls/{number}"), &BTreeMap::new(), "core", ACCEPT_HTML, emit);
+  let v = v.ok_or("取不到这个 PR")?;
+  let out = serde_json::json!({
+    "number": v["number"],
+    "title": v["title"].as_str().unwrap_or(""),
+    "url": v["html_url"].as_str().unwrap_or(""),
+    "state": v["state"].as_str().unwrap_or(""),
+    "draft": v["draft"].as_bool().unwrap_or(false),
+    "merged": v["merged"].as_bool().unwrap_or(false),
+    "mergeable_state": v["mergeable_state"].as_str().unwrap_or(""),
+    "author": v["user"]["login"].as_str().unwrap_or(""),
+    "created_at": v["created_at"].as_str().unwrap_or(""),
+    "base": v["base"]["ref"].as_str().unwrap_or(""),
+    "head": v["head"]["ref"].as_str().unwrap_or(""),
+    "additions": v["additions"].as_i64().unwrap_or(0),
+    "deletions": v["deletions"].as_i64().unwrap_or(0),
+    "changed_files": v["changed_files"].as_i64().unwrap_or(0),
+    "commits": v["commits"].as_i64().unwrap_or(0),
+    "review_comments": v["review_comments"].as_i64().unwrap_or(0),
+    "labels": labels_of(&v),
+    "body_html": v["body_html"].as_str().unwrap_or(""),
+  });
+  cache_put(conn, id, &key, "pr", &out.to_string());
+  emit(format!("[pr] #{number} +{}/-{} {} 文件", out["additions"], out["deletions"], out["changed_files"]));
+  Ok(out)
+}
+
+/// PR 的变更文件与逐文件 patch（unified diff）。diff 一旦生成就不会变，所以缓存 1 小时。
+/// 单个文件的 patch 截到 20k 字符——大文件整段塞进 webview 会把渲染拖死，够看就行。
+pub fn pr_files(conn: &Connection, id: i64, number: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = gh_full(conn, id)?;
+  let key = format!("#{number}");
+  if let Some(c) = cache_get(conn, id, &key, "files", 3_600) {
+    emit("[files] 命中 1 小时缓存".into());
+    return serde_json::from_str(&c).map_err(|e| e.to_string());
+  }
+  const MAX_PATCH: usize = 20_000;
+  let mut q = BTreeMap::new();
+  q.insert("per_page", "100".to_string());
+  let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  h.probe(emit);
+  let v: Option<Vec<serde_json::Value>> =
+    h.get_json_as(&format!("/repos/{full}/pulls/{number}/files"), &q, "core", "application/vnd.github+json", emit);
+  let rows = v.unwrap_or_default();
+  let items: Vec<serde_json::Value> = rows.iter().map(|f| {
+    let patch = f["patch"].as_str().unwrap_or("");
+    let cut = patch.chars().count() > MAX_PATCH;
+    serde_json::json!({
+      "filename": f["filename"].as_str().unwrap_or(""),
+      "status": f["status"].as_str().unwrap_or(""),
+      "additions": f["additions"].as_i64().unwrap_or(0),
+      "deletions": f["deletions"].as_i64().unwrap_or(0),
+      "changes": f["changes"].as_i64().unwrap_or(0),
+      "patch": if cut { patch.chars().take(MAX_PATCH).collect::<String>() } else { patch.to_string() },
+      "patch_truncated": cut,
+      "binary": f["patch"].is_null(),
+    })
+  }).collect();
+  let out = serde_json::json!({ "count": items.len(), "truncated": rows.len() >= 100, "items": items });
+  cache_put(conn, id, &key, "files", &out.to_string());
+  emit(format!("[files] #{number} {} 个文件", items.len()));
+  Ok(out)
+}
+
+/// 最近的 Actions 运行。**只能读到列表**：日志下载要仓库权限，所以点一条 run 是走应用内 WebView。
+pub fn actions_runs(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = gh_full(conn, id)?;
+  if let Some(c) = cache_get(conn, id, "", "actions", 300) {
+    emit("[actions] 命中 5 分钟缓存".into());
+    return serde_json::from_str(&c).map_err(|e| e.to_string());
+  }
+  let mut q = BTreeMap::new();
+  q.insert("per_page", "30".to_string());
+  let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  h.probe(emit);
+  let v: Option<serde_json::Value> =
+    h.get_json_as(&format!("/repos/{full}/actions/runs"), &q, "core", "application/vnd.github+json", emit);
+  let v = v.ok_or("取不到 Actions 运行（这个仓库可能没开 Actions）")?;
+  let items: Vec<serde_json::Value> = v["workflow_runs"].as_array().map(|a| a.iter().map(|r| serde_json::json!({
+    "id": r["id"],
+    "name": r["name"].as_str().unwrap_or(""),
+    "title": r["display_title"].as_str().unwrap_or(""),
+    "status": r["status"].as_str().unwrap_or(""),
+    "conclusion": r["conclusion"].as_str().unwrap_or(""),
+    "event": r["event"].as_str().unwrap_or(""),
+    "branch": r["head_branch"].as_str().unwrap_or(""),
+    "run_number": r["run_number"].as_i64().unwrap_or(0),
+    "created_at": r["created_at"].as_str().unwrap_or(""),
+    "url": r["html_url"].as_str().unwrap_or(""),
+  })).collect()).unwrap_or_default();
+  let out = serde_json::json!({ "total": v["total_count"].as_i64().unwrap_or(0), "count": items.len(), "items": items });
+  cache_put(conn, id, "", "actions", &out.to_string());
+  emit(format!("[actions] 共 {} 次运行，取回 {} 条", out["total"], items.len()));
   Ok(out)
 }
 

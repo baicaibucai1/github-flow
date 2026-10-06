@@ -245,6 +245,42 @@ fn repo_list(repo_id: i64, kind: String) -> Result<serde_json::Value, String> {
   feed::repo_list(&c, repo_id, &kind, &mut sink)
 }
 
+// ---- 应用内的 issue / PR / Actions：点开详情不再甩到系统浏览器（他 2026-10-06 明确要求）
+#[tauri::command]
+fn issue_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::issue_detail(&c, repo_id, number, &mut sink)
+}
+
+#[tauri::command]
+fn issue_comments(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::issue_comments(&c, repo_id, number, &mut sink)
+}
+
+#[tauri::command]
+fn pr_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::pr_detail(&c, repo_id, number, &mut sink)
+}
+
+#[tauri::command]
+fn pr_files(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::pr_files(&c, repo_id, number, &mut sink)
+}
+
+#[tauri::command]
+fn actions_runs(repo_id: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::actions_runs(&c, repo_id, &mut sink)
+}
+
 /// 顶部原生菜单：应用 / 编辑。
 /// 编辑菜单不只是看着像 —— Windows 上 webview 里的 Ctrl+C/V 要有原生编辑菜单项
 /// 才会稳定生效，没有它复制 clone 命令那种操作会时灵时不灵。
@@ -298,7 +334,7 @@ fn main() {
       build_menu(app)?;
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list, issue_detail, issue_comments, pr_detail, pr_files, actions_runs])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }
