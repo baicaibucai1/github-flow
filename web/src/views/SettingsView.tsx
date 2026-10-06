@@ -14,11 +14,26 @@ import { KeyRoundIcon, LogInIcon, Trash2Icon } from "lucide-react";
 import {
   call,
   log,
+  openExternal,
   type Account,
   type DevicePoll,
   type DeviceStart,
 } from "../lib/bridge";
 import { bumpFeed, notice, persist, reloadAll, useApp } from "../lib/store";
+
+/** 跳出去只能用系统浏览器：Tauri 会吞掉 target=_blank，写了等于没写 */
+function Go({ url, label }: { url: string; label: string }) {
+  return (
+    <Button
+      size="xs"
+      variant="link"
+      className="h-auto p-0"
+      onClick={() => openExternal(url).catch((e) => notice("打不开浏览器：" + String(e)))}
+    >
+      {label}
+    </Button>
+  );
+}
 
 const SECTIONS = [
   { value: "look", label: "外观" },
@@ -453,9 +468,11 @@ function Accounts({ onJump }: { onJump: (c: string) => void }) {
         }
         description={
           <>
-            到 <code>github.com/settings/tokens</code> 建一个 classic token，只勾{" "}
-            <code>read:user</code> 和 <code>public_repo</code>（不要勾 repo，就不碰你的私有代码），
-            粘贴进来。验证通过后 token 只写进本机 accounts.json，<b>不进数据库、不会出现在界面上</b>。
+            到{" "}
+            <Go url="https://github.com/settings/tokens" label="github.com/settings/tokens" />{" "}
+            建一个 classic token，只勾 <code>read:user</code> 和 <code>public_repo</code>
+            （不要勾 repo，就不碰你的私有代码），粘贴进来。验证通过后 token 只写进本机
+            accounts.json，<b>不进数据库、不会出现在界面上</b>。
           </>
         }
         control={
@@ -521,9 +538,13 @@ function Accounts({ onJump }: { onJump: (c: string) => void }) {
         }
         description={
           <>
-            要先发一个 OAuth App：<code>github.com/settings/developers</code> → New OAuth App →
-            建好后在页面底部勾上 <b>Allow device flow</b>（默认关），把 Client ID 填到下面。
-            不需要回调地址，也不把密钥打进应用里。
+            要先发一个 OAuth App：
+            <Go
+              url="https://github.com/settings/developers"
+              label="github.com/settings/developers"
+            />{" "}
+            → New OAuth App → 建好后在页面底部勾上 <b>Allow device flow</b>（默认关），
+            把 Client ID 填到下面。不需要回调地址，也不把密钥打进应用里。
           </>
         }
         control={
@@ -590,14 +611,10 @@ function Accounts({ onJump }: { onJump: (c: string) => void }) {
             <div className="flex flex-col gap-2xs text-body">
               <span>
                 在浏览器里打开{" "}
-                <a
-                  className="text-primary underline"
-                  href={dev.verification_uri_complete || dev.verification_uri}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {dev.verification_uri}
-                </a>
+                <Go
+                  url={dev.verification_uri_complete || dev.verification_uri}
+                  label={dev.verification_uri}
+                />
                 ，输入这个一次性代码（{Math.round((dev.expires_in || 900) / 60)} 分钟内有效）：
               </span>
               <span className="font-mono text-title tracking-widest">{dev.user_code}</span>

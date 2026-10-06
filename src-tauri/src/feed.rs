@@ -1386,6 +1386,24 @@ pub fn missing_scopes(scopes: &str) -> Vec<&'static str> {
   miss
 }
 
+/// 用系统默认浏览器打开外链。
+/// 为什么非要一个命令：Tauri 2 默认会把 `window.open` 和 `target="_blank"` 吞掉
+/// （没装 opener 插件、也没挂 on_new_window），点了没反应还不报错。
+/// 只放行 github.com 的 https 地址：这个口子一旦变成"任何字符串都交给浏览器"，
+/// README 里一个链接就够了。
+pub fn open_external(url: &str) -> Result<String, String> {
+  let u = url.trim();
+  let ok = u.starts_with("https://github.com/") || u.starts_with("https://www.github.com/");
+  if !ok { return Err(format!("只允许打开 github.com 的 https 链接，收到：{u}")); }
+  let r = {
+    #[cfg(windows)]
+    { std::process::Command::new("explorer").arg(u).spawn() }
+    #[cfg(not(windows))]
+    { std::process::Command::new("xdg-open").arg(u).spawn() }
+  };
+  r.map(|_| "已在系统浏览器打开".to_string()).map_err(|e| format!("打不开系统浏览器：{e}"))
+}
+
 pub fn active_login(conn: &Connection) -> String {
   let s = get_settings(conn);
   match s.get("active_login").and_then(|v| v.as_str()) {

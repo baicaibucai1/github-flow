@@ -142,6 +142,11 @@ fn open_in_app_window(app: tauri::AppHandle, url: String, repo_id: i64) -> Resul
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<String, String> {
+  feed::open_external(&url)
+}
+
+#[tauri::command]
 fn auth_status() -> Result<serde_json::Value, String> {
   // Rust 侧的话也写进同一份磁盘日志，否则 GUI 里 println 出来的东西没人看得见
   let mut sink = |s: String| { let _ = js_log(s); };
@@ -207,7 +212,7 @@ fn main() {
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

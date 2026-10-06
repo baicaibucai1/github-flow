@@ -18,7 +18,7 @@ import {
   MonitorIcon,
   StarIcon,
 } from "lucide-react";
-import { call, log, n, type Detail } from "../lib/bridge";
+import { call, log, n, openExternal, type Detail } from "../lib/bridge";
 import { logEvent } from "../lib/exposure";
 import { requestTranslate, setDbg, useApp, useDbg } from "../lib/store";
 
@@ -198,8 +198,8 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
               size="sm"
               variant="ghost"
               onClick={() => {
-                void logEvent("open", d.id!).catch(() => {});
-                window.open(url, "_blank");
+                void logEvent("open_in_browser", d.id!, url).catch(() => {});
+                openExternal(url).catch((e) => log("open FAIL " + e));
               }}
             >
               <ExternalLinkIcon data-icon="inline-start" />
@@ -283,6 +283,15 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
             <div
               ref={rdRef}
               className="md"
+              onClick={(e) => {
+                // README 里的链接是第三方 HTML，target=_blank 在 Tauri 里会被吞掉：
+                // 不拦下来自己处理，点任何链接都是"没反应"
+                const a = (e.target as HTMLElement).closest?.("a");
+                if (!a) return;
+                e.preventDefault();
+                const href = a.getAttribute("href") ?? "";
+                openExternal(href).catch((err) => onNotice("没打开这个链接：" + String(err)));
+              }}
               dangerouslySetInnerHTML={{
                 __html: d.readme_html
                   ? sanitize(d.readme_html)

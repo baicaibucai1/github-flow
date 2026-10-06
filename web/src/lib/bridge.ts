@@ -150,6 +150,14 @@ export async function call<T>(cmd: string, args?: Record<string, unknown>): Prom
   }
 }
 
+/**
+ * 用系统默认浏览器打开。必须走 Rust：Tauri 2 默认吞掉 window.open 与 target=_blank，
+ * 点了没反应也不报错。Rust 侧只放行 github.com 的 https 地址。
+ */
+export function openExternal(url: string): Promise<string> {
+  return call<string>("open_url", { url });
+}
+
 export function ago(ts: number | undefined): string {
   if (!ts) return "从未";
   const m = Math.round((Date.now() / 1000 - ts) / 60);

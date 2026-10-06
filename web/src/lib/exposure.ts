@@ -72,6 +72,7 @@ export function useExposure(meta: {
 
 export type EventKind =
   | "open"
+  | "open_in_browser"
   | "star_in_app"
   | "copy_clone"
   | "dwell"

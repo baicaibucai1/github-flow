@@ -22,7 +22,7 @@ import {
   EyeOffIcon,
 } from "lucide-react";
 import { cn } from "cn";
-import { n, type Card as FeedCard } from "../lib/bridge";
+import { log, n, openExternal, type Card as FeedCard } from "../lib/bridge";
 import { logEvent, useExposure } from "../lib/exposure";
 import { requestTranslate, useApp, useDbg } from "../lib/store";
 
@@ -185,8 +185,10 @@ export function RepoCard({ card, index, hero, onOpen, onHide, onSaved }: RepoCar
             size="xs"
             variant="ghost"
             onClick={() => {
-              void logEvent("open", card.id).catch(() => {});
-              window.open(card.url, "_blank");
+              // 跳出去是一种独立信号（手册 9.1）：它跟"在应用里点开"不是一回事，
+              // 混成同一个 kind 就没法算"多少内容其实是在 GitHub 上看完的"
+              void logEvent("open_in_browser", card.id, card.url).catch(() => {});
+              openExternal(card.url).catch((e) => log("open FAIL " + e));
             }}
           >
             <ExternalLinkIcon data-icon="inline-start" />

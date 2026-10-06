@@ -66,6 +66,13 @@ README 那种第三方 HTML 除外，它在 `web/src/styles.css` 的 `.md` 段�
 搬进来的只有 `base-nova` 一套结构样式——对照样本 vega/maia/luma 没搬，真项目留多套等于
 Soda 的 ADR-101"单一真相"当场失效。同样没搬 `@tauri-apps/plugin-sql`：取数必须在 Rust 侧。
 
+**一个上游坑，已就地补**：组件箱里写的 `data-horizontal:` / `data-vertical:` 在 Tailwind v4
+下编译成 `[data-horizontal]`，而 Base UI 落在 DOM 上的是 `data-orientation="horizontal"`，
+两边对不上——于是 Tabs 永远不竖排（页面标签和内容并排、被撑成一列高盒子），
+Separator 高度为 0（分隔线看不见），滚动条尺寸同理。修法是 `web/src/styles.css` 里补两条
+`@custom-variant`，不动 vendored 组件源码。soda-ui 自己的构建产物里同样是死选择器
+（playground 只验了横向溢出所以没暴露），这条应该往上游提。
+
 ## 构建
 
 Tauri 2 走 **GNU 工具链**（不需要 Visual Studio）。依赖 MinGW 在 PATH 里：

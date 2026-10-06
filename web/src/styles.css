@@ -8,6 +8,14 @@
    不声明这条，组件里所有 dark: 变体都不会切换。 */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* 组件箱里写的 data-horizontal: / data-vertical: 在 Tailwind v4 下编译成 [data-horizontal]，
+   而 Base UI 落在 DOM 上的是 data-orientation="horizontal" —— 两者对不上，于是
+   Tabs 的"横排时竖着堆"不生效（页面标签和内容并排、被撑成一列高盒子）、
+   Separator 高度为 0（分隔线看不见）。上游 soda-ui 的构建产物里同样是死选择器，
+   它 playground 只验了横向溢出所以没暴露。补这两条，不动 vendored 组件源码。 */
+@custom-variant data-horizontal (&:where([data-orientation="horizontal"], [data-orientation="horizontal"] *));
+@custom-variant data-vertical (&:where([data-orientation="vertical"], [data-orientation="vertical"] *));
+
 /* monorepo 源码不在 node_modules，Tailwind v4 需要显式声明扫描面 */
 @source "../../soda/ui/src";
 @source "../../soda/patterns/src";
