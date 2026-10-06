@@ -113,6 +113,15 @@ fn main() {
     println!("{}", feed::me_report(&conn));
     return;
   }
+  if args.get(1).map(|s| s.as_str()) == Some("profile") {
+    // GitHub 侧的主页数据（会发请求；15 分钟内重复跑走缓存）
+    let conn = feed::open_db().expect("打不开数据库");
+    match feed::my_profile(&conn, &mut |m| println!("{m}")) {
+      Ok(v) => println!("{}", v),
+      Err(e) => println!("取不到：{e}"),
+    }
+    return;
+  }
   let conn = feed::open_db().expect("打不开数据库");
   if let Err(e) = feed::run_collect(&conn, pages, curves, &mut |m| println!("{m}")) {
     println!("[collect 失败] {e}");

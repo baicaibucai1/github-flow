@@ -1,15 +1,40 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AlertDescription, Badge, Button, Progress, Separator } from "@soda/ui";
+import {
+  ActivityGraph,
+  Alert,
+  AlertDescription,
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+  Progress,
+  Separator,
+} from "@soda/ui";
 import { DashboardPage, PanelCard } from "@soda/patterns";
-import { CalendarClockIcon, ExternalLinkIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  ExternalLinkIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from "lucide-react";
 import {
   ago,
   call,
   log,
   openExternal,
   type AuthStatus,
+  type GhProfile,
   type MeReport,
-  type Stats,
+  type Repo,
 } from "../lib/bridge";
 import { notice, refreshAuth, reloadAll, useApp } from "../lib/store";
 
@@ -18,7 +43,7 @@ const KIND_LABEL: Record<string, string> = {
   open_in_browser: "跳去浏览器",
   star_in_app: "收藏",
   copy_clone: "复制 clone",
-  dwell: "停留",
+  dwell: "停留（每 5 秒一条心跳）",
   hide: "不感兴趣",
   search: "搜索",
   webview_open: "应用内浏览",
@@ -28,24 +53,32 @@ const KIND_LABEL: Record<string, string> = {
 export function MeView() {
   const { auth, stats } = useApp();
   const [me, setMe] = useState<MeReport | null>(null);
+  const [gh, setGh] = useState<GhProfile | null>(null);
+  const [ghErr, setGhErr] = useState("");
   const [busy, setBusy] = useState("");
 
   const load = useCallback(() => {
     void call<MeReport>("me_report")
       .then(setMe)
       .catch((e) => log("me_report FAIL " + e));
+    setGhErr("");
+    void call<GhProfile>("my_profile")
+      .then((p) => {
+        setGh(p);
+        setGhErr("");
+      })
+      .catch((e) => setGhErr(String(e)));
   }, []);
 
   useEffect(load, [load]);
 
-  const act = (label: string, p: Promise<unknown>, done: string, jump?: string) => {
+  const act = (label: string, p: Promise<unknown>, done: string) => {
     setBusy(label);
     void p
       .then(() => Promise.all([refreshAuth(), reloadAll()]))
       .then(() => {
         load();
         notice(done);
-        if (jump) notice(jump);
       })
       .catch((e) => notice(label + "失败：" + String(e)))
       .finally(() => setBusy(""));
@@ -56,70 +89,59 @@ export function MeView() {
   const liveBuckets = me?.buckets.filter((b) => b.live).length ?? 0;
 
   return (
-    <div className="p-md">
+    <div className="flex flex-col gap-md p-md">
+      <ProfileCard gh={gh} err={ghErr} busy={busy} onRetry={load} />
+
       <DashboardPage
-        header={{
-          title: "我的",
-          description:
-            "这页除了配额，全部是本机数据：配额是现场问 GitHub 的（那个请求不计配额）。",
-          actions: (
-            <>
-              <Button
-                size="sm"
-                disabled={!!busy}
-                onClick={() =>
-                  act("建画像", call<string>("build_my_profile", { pages: 5 }), "画像已重建")
-                }
-              >
-                <SparklesIcon data-icon="inline-start" />
-                {busy === "建画像" ? "建画像中…" : "重建画像"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!!busy}
-                onClick={() => act("校准", call<string>("calibrate_now"), "已重新校准")}
-              >
-                {busy === "校准" ? "校准中…" : "重新校准"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void refreshAuth().then(load);
-                }}
-              >
-                刷新
-              </Button>
-              {auth?.login ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    openExternal("https://github.com/" + auth.login).catch((e) =>
-                      notice(String(e))
-                    )
-                  }
-                >
-                  <ExternalLinkIcon data-icon="inline-start" />
-                  在 GitHub 打开我
-                </Button>
-              ) : null}
-            </>
-          ),
-        }}
         metrics={[
+          { label: "公开仓库", value: gh?.repo_count ?? "—" },
+          { label: "Followers", value: gh?.followers ?? "—" },
+          { label: "近 90 天公开事件", value: gh?.event_count ?? "—" },
           {
             label: "剩余配额",
-            value: auth?.core ? `${auth.core.remaining}` : "—",
+            value: auth?.core?.remaining ?? "—",
             delta: auth?.core ? `共 ${auth.core.limit} 次/小时` : undefined,
             trend: auth?.authed ? "up" : "flat",
           },
-          { label: "画像词数", value: me?.terms.length ?? 0 },
-          { label: "画像候选", value: me?.profile_hits ?? 0 },
-          { label: "本机收藏", value: me?.saved ?? 0 },
         ]}
       >
+        <PanelCard
+          title="他的仓库（按 star）"
+          description="不含 fork。GitHub 的 pins 只在 GraphQL 里，所以这里按 star 排前 6 个，等价于页面上的 Popular。"
+          span={8}
+        >
+          {gh?.popular.length ? (
+            <ItemGroup>
+              {gh.popular.map((r) => (
+                <RepoItem key={r.full_name} r={r} />
+              ))}
+            </ItemGroup>
+          ) : (
+            <p className="text-caption text-muted-foreground">
+              {ghErr ? "取不到仓库列表，见上方提示。" : "载入中…"}
+            </p>
+          )}
+        </PanelCard>
+
+        <PanelCard
+          title="近 90 天活跃"
+          description="REST 的公开事件，最多 300 条；跟 GitHub 页面上那个 contributions 不是一个口径（那个走 GraphQL、含私有仓库）。"
+          span={4}
+        >
+          {gh && gh.activity.length ? (
+            <ActivityGraph days={gh.activity} />
+          ) : (
+            <p className="text-caption text-muted-foreground">
+              {gh ? "这段时间没有公开事件。" : "载入中…"}
+            </p>
+          )}
+          {gh ? (
+            <p className="mt-sm text-caption text-muted-foreground">
+              {gh.event_count} 条事件分布在 {gh.activity.length} 天里
+            </p>
+          ) : null}
+        </PanelCard>
+
         <PanelCard
           title="它以为你喜欢什么"
           description="TF-IDF 词表前 16 个。权重 1.0 是你收藏过的东西里提出来的词；泛词（df 超过 15%）已被剔除。"
@@ -128,14 +150,20 @@ export function MeView() {
           {me && me.terms.length ? (
             <div className="flex flex-col gap-xs">
               {me.terms.map((t) => (
-                <Bar key={t.term} name={t.term} v={t.weight} max={maxTerm} suffix={t.weight.toFixed(2)} />
+                <Bar
+                  key={t.term}
+                  name={t.term}
+                  v={t.weight}
+                  max={maxTerm}
+                  suffix={t.weight.toFixed(2)}
+                />
               ))}
             </div>
           ) : (
             <Alert>
               <AlertDescription>
-                词表是空的 —— 你刚登录，还没让它读过你的收藏。点右上角「重建画像」，
-                它会读你的 starred 与公开仓库，算出词表后按词表去抓取（约 1 分钟）。
+                词表是空的 —— 还没让它读过你的收藏。点上面的「重建画像」，它会读你的 starred
+                与公开仓库算出词表，再按词表去抓取（约 1 分钟）。
               </AlertDescription>
             </Alert>
           )}
@@ -145,7 +173,13 @@ export function MeView() {
           {me && me.langs.length ? (
             <div className="flex flex-col gap-xs">
               {me.langs.map((l) => (
-                <Bar key={l.language} name={l.language} v={l.weight} max={maxLang} suffix={l.weight.toFixed(2)} />
+                <Bar
+                  key={l.language}
+                  name={l.language}
+                  v={l.weight}
+                  max={maxLang}
+                  suffix={l.weight.toFixed(2)}
+                />
               ))}
             </div>
           ) : (
@@ -155,11 +189,11 @@ export function MeView() {
 
         <PanelCard
           title="你做过什么"
-          description="曝光按 (项目, 会话) 去重；停留是每 5 秒一条心跳，不是独立行为。"
+          description="曝光按 (项目, 会话) 去重；停留是心跳，不是独立行为。"
           span={6}
         >
           <div className="flex flex-col gap-xs text-label">
-            {me?.kinds.length ? (
+            {me && me.kinds.length ? (
               me.kinds.map(([k, n]) => (
                 <span key={k} className="flex items-center justify-between gap-md">
                   <span className="truncate">
@@ -175,8 +209,9 @@ export function MeView() {
           </div>
           {stats ? (
             <p className="mt-md text-caption text-muted-foreground">
-            曝光 {stats.impressions} 次 / 触达 {stats.reach} 个不同项目 / {stats.sessions} 个会话；
-            点开率 {Math.round((stats.opens / Math.max(stats.impressions, 1)) * 1000) / 10}%。
+              曝光 {stats.impressions} 次 / 触达 {stats.reach} 个不同项目 / {stats.sessions}{" "}
+              个会话；点开率{" "}
+              {Math.round((stats.opens / Math.max(stats.impressions, 1)) * 1000) / 10}%。
             </p>
           ) : null}
           {me && me.hide_reasons.length ? (
@@ -205,10 +240,7 @@ export function MeView() {
           {me && me.buckets.length ? (
             <div className="flex flex-col gap-2xs text-caption">
               {me.buckets.map((b) => (
-                <span
-                  key={b.feat + b.bucket}
-                  className="flex items-center justify-between gap-sm"
-                >
+                <span key={b.feat + b.bucket} className="flex items-center justify-between gap-sm">
                   <span className="truncate font-mono">
                     {b.feat}={b.bucket}
                   </span>
@@ -229,29 +261,158 @@ export function MeView() {
             </div>
           ) : (
             <p className="text-caption text-muted-foreground">
-              还没有分桶数据。攒够曝光后点「重新校准」，够不到 n≥{me?.min_n ?? 20} 的桶不会生效
-              —— 几十条数据就改排序等于把噪声当信号。
+              还没有分桶数据。攒够曝光后点「重新校准」，够不到 n≥{me?.min_n ?? 20}{" "}
+              的桶不会生效 —— 几十条数据就改排序等于把噪声当信号。
             </p>
           )}
         </PanelCard>
 
         <PanelCard title="身份与凭据" span={12}>
-          <Identity auth={auth} busy={busy} onRemove={() =>
-            act("移除凭据", call("account_remove", { login: auth?.login ?? "" }), "已移除本机凭据")
-          } />
+          <Identity
+            auth={auth}
+            busy={busy}
+            onBuild={() =>
+              act("建画像", call<string>("build_my_profile", { pages: 5 }), "画像已重建")
+            }
+            onCalibrate={() => act("校准", call<string>("calibrate_now"), "已重新校准")}
+            onRemove={() =>
+              act(
+                "移除凭据",
+                call("account_remove", { login: auth?.login ?? "" }),
+                "已移除本机凭据"
+              )
+            }
+          />
         </PanelCard>
       </DashboardPage>
     </div>
   );
 }
 
+function ProfileCard({
+  gh,
+  err,
+  busy,
+  onRetry,
+}: {
+  gh: GhProfile | null;
+  err: string;
+  busy: string;
+  onRetry: () => void;
+}) {
+  if (err) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>
+          读不到 GitHub 上的资料：{err}
+        </AlertDescription>
+        <Button size="xs" variant="outline" onClick={onRetry}>
+          重试
+        </Button>
+      </Alert>
+    );
+  }
+  if (!gh) {
+    return (
+      <Card className="gap-0 py-0">
+        <CardContent className="flex items-start gap-md py-md">
+          <Progress value={40} className="h-1 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  const initial = (gh.name || gh.login).slice(0, 1).toUpperCase();
+  return (
+    <Card className="gap-0 py-0">
+      <CardContent className="flex flex-col gap-md py-md sm:flex-row sm:items-start">
+        <Avatar className="size-24 shrink-0">
+          {gh.avatar ? <AvatarImage src={gh.avatar} alt={gh.login} /> : null}
+          <AvatarFallback>{initial}</AvatarFallback>
+        </Avatar>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-xs">
+          <div className="flex flex-col">
+            <h1 className="truncate text-title">{gh.name || gh.login}</h1>
+            <p className="text-muted-foreground text-body">
+              {gh.login}
+              {gh.location ? ` · ${gh.location}` : ""}
+              {gh.company ? ` · ${gh.company}` : ""}
+            </p>
+          </div>
+          {gh.bio ? (
+            <p className="max-w-prose whitespace-pre-line text-body">{gh.bio}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-md text-caption">
+            <span>
+              <b className="font-medium text-foreground">{gh.public_repos ?? 0}</b> 公开仓库
+            </span>
+            <span>
+              <b className="font-medium text-foreground">{gh.followers ?? 0}</b> followers
+            </span>
+            <span>
+              <b className="font-medium text-foreground">{gh.following ?? 0}</b> following
+            </span>
+            {gh.blog ? <span className="font-mono">{gh.blog}</span> : null}
+            <span className="text-muted-foreground">加入于 {gh.created_at?.slice(0, 10)}</span>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-stretch gap-2xs sm:w-40">
+          <Button
+            size="sm"
+            disabled={!!busy}
+            onClick={() =>
+              openExternal(gh.url || "https://github.com/" + gh.login).catch((e) =>
+                notice(String(e))
+              )
+            }
+          >
+            <ExternalLinkIcon data-icon="inline-start" />
+            在 GitHub 打开
+          </Button>
+          <Button size="sm" variant="outline" disabled={!!busy} onClick={onRetry}>
+            {busy === "资料" ? "载入中…" : "刷新资料"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RepoItem({ r }: { r: Repo }) {
+  return (
+    <Item
+      variant="outline"
+      className="cursor-pointer"
+      onClick={() => openExternal(r.url).catch((e) => notice(String(e)))}
+    >
+      <ItemContent>
+        <ItemTitle>
+          {r.name}
+          {r.archived ? <Badge variant="secondary">已归档</Badge> : null}
+        </ItemTitle>
+        <ItemDescription className="line-clamp-2">{r.description || "（无简介）"}</ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        {r.language ? <Badge variant="outline">{r.language}</Badge> : null}
+        <Badge variant="secondary">★ {r.stars}</Badge>
+        <span className="text-caption text-muted-foreground">{agoFromIso(r.pushed_at)}</span>
+      </ItemActions>
+    </Item>
+  );
+}
+
 function Identity({
   auth,
   busy,
+  onBuild,
+  onCalibrate,
   onRemove,
 }: {
   auth: AuthStatus | null;
   busy: string;
+  onBuild: () => void;
+  onCalibrate: () => void;
   onRemove: () => void;
 }) {
   if (!auth) {
@@ -261,8 +422,8 @@ function Identity({
     return (
       <Alert>
         <AlertDescription>
-          本机没有凭据，现在是匿名态：core {auth.core?.remaining ?? "?"}/{auth.core?.limit ?? "60"}{" "}
-          次/小时。去「设置 → 账号」登录。
+          本机没有凭据，现在是匿名态：core {auth.core?.remaining ?? "?"}/
+          {auth.core?.limit ?? "60"} 次/小时。去「设置 → 账号」登录。
           {auth.error ? `（读配额失败：${auth.error}）` : ""}
         </AlertDescription>
       </Alert>
@@ -297,13 +458,15 @@ function Identity({
       <p className="text-caption text-muted-foreground">
         凭据只写在本机 <code>{auth.cred_file}</code>，不进数据库、不出这台机器。
       </p>
-      <div>
-        <Button
-          size="xs"
-          variant="destructive"
-          disabled={!!busy}
-          onClick={onRemove}
-        >
+      <div className="flex flex-wrap gap-2xs">
+        <Button size="xs" disabled={!!busy} onClick={onBuild}>
+          <SparklesIcon data-icon="inline-start" />
+          {busy === "建画像" ? "建画像中…" : "重建画像"}
+        </Button>
+        <Button size="xs" variant="outline" disabled={!!busy} onClick={onCalibrate}>
+          {busy === "校准" ? "校准中…" : "重新校准"}
+        </Button>
+        <Button size="xs" variant="destructive" disabled={!!busy} onClick={onRemove}>
           <Trash2Icon data-icon="inline-start" />
           移除这个凭据
         </Button>
@@ -312,17 +475,7 @@ function Identity({
   );
 }
 
-function Bar({
-  name,
-  v,
-  max,
-  suffix,
-}: {
-  name: string;
-  v: number;
-  max: number;
-  suffix: string;
-}) {
+function Bar({ name, v, max, suffix }: { name: string; v: number; max: number; suffix: string }) {
   return (
     <div className="flex items-center gap-sm">
       <span className="w-32 shrink-0 truncate text-label">{name}</span>
@@ -332,4 +485,10 @@ function Bar({
       </span>
     </div>
   );
+}
+
+function agoFromIso(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  return ago(Math.floor(t / 1000));
 }

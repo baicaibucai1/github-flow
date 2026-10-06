@@ -207,6 +207,14 @@ fn me_report() -> Result<serde_json::Value, String> {
   Ok(feed::me_report(&c))
 }
 
+/// GitHub 侧的"我"：头像简介、公开仓库、近 90 天公开事件。要发请求，故带缓存
+#[tauri::command]
+fn my_profile() -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::my_profile(&c, &mut sink)
+}
+
 #[tauri::command]
 fn get_counts() -> Result<serde_json::Value, String> {  let c = feed::open_db()?;
   Ok(feed::channel_counts(&c))
@@ -218,7 +226,7 @@ fn main() {
     // "command not found"，而不是给出任何有用的提示。
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(tauri_plugin_process::init())
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

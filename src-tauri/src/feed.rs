@@ -1086,6 +1086,107 @@ pub fn me_report(conn: &Connection) -> serde_json::Value {
   })
 }
 
+fn ensure_profile_cache(conn: &Connection) {
+  conn.execute_batch(
+    "CREATE TABLE IF NOT EXISTS profile_cache(login TEXT PRIMARY KEY, body TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL);",
+  ).ok();
+}
+
+/// "我的"页面上的 GitHub 侧信息：头像简介、他自己的公开仓库、近 90 天的公开事件日历。
+/// 最多 5 个请求（1 用户 + 1 仓库 + 3 页事件），所以带 15 分钟缓存——
+/// 在几个页面之间来回切不该把配额烧在这上面。
+pub fn my_profile(conn: &Connection, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let login = match current_acct(conn) {
+    Some(a) => a.login,
+    None => active_login(conn),
+  };
+  if login.is_empty() { return Err("还没登录账号：这页的头像与仓库要读你自己的 GitHub".into()); }
+
+  const TTL: i64 = 900;
+  ensure_profile_cache(conn);
+  let ts = now_s();
+  if let Ok(body) = conn.query_row(
+    "SELECT body FROM profile_cache WHERE login=?1 AND fetched_at > ?2",
+    params![&login, ts - TTL], |r| r.get::<_, String>(0)) {
+    emit("[profile] 命中 15 分钟缓存，未联网".into());
+    return serde_json::from_str(&body).map_err(|e| format!("缓存坏了：{e}"));
+  }
+
+  let mut http = Http { core_left: 999, search_left: 999, tok: None }.authed();
+  let u: Option<serde_json::Value> =
+    http.get_json(&format!("/users/{login}"), &BTreeMap::new(), "core", emit);
+
+  let mut rq: BTreeMap<&str, String> = BTreeMap::new();
+  rq.insert("per_page", "100".into());
+  rq.insert("sort", "updated".into());
+  rq.insert("direction", "desc".into());
+  let repos: Option<Vec<serde_json::Value>> =
+    http.get_json(&format!("/users/{login}/repos"), &rq, "core", emit);
+
+  // 活跃图用的是 REST 的公开事件：GitHub 只给近 90 天、最多 300 条。
+  // 这跟 GitHub 页面上那个 "N contributions" 不是同一个口径（那个走 GraphQL，
+  // 还含私有仓库），所以界面上必须写清楚是"公开事件"，不要冒充它。
+  let mut days: BTreeMap<String, i64> = BTreeMap::new();
+  let mut ev_total = 0i64;
+  for page in 1..=3i64 {
+    let mut pq: BTreeMap<&str, String> = BTreeMap::new();
+    pq.insert("per_page", "100".into());
+    pq.insert("page", page.to_string());
+    let ev: Vec<serde_json::Value> = match http.get_json(
+      &format!("/users/{login}/events/public"), &pq, "core", emit) {
+      Some(v) => v,
+      None => break,
+    };
+    if ev.is_empty() { break; }
+    ev_total += ev.len() as i64;
+    for e in &ev {
+      if let Some(d) = e["created_at"].as_str().map(|s| s.chars().take(10).collect::<String>()) {
+        *days.entry(d).or_insert(0) += 1;
+      }
+    }
+    if (ev.len() as i64) < 100 { break; }
+  }
+
+  let thin = |v: &serde_json::Value| serde_json::json!({
+    "name": v["name"], "full_name": v["full_name"], "description": v["description"],
+    "url": v["html_url"], "language": v["language"], "stars": v["stargazers_count"],
+    "forks": v["forks_count"], "issues": v["open_issues_count"], "fork": v["fork"],
+    "archived": v["archived"], "pushed_at": v["pushed_at"],
+  });
+  let mut by_updated: Vec<serde_json::Value> = repos.unwrap_or_default().iter().map(thin).collect();
+  by_updated.retain(|r| r["fork"].as_bool() != Some(true));
+  let mut by_stars = by_updated.clone();
+  let num = |r: &serde_json::Value, k: &str| r[k].as_i64().unwrap_or(0);
+  by_stars.sort_by(|a, b| num(b, "stars").cmp(&num(a, "stars")));
+
+  let out = serde_json::json!({
+    "login": login,
+    "name": u.as_ref().and_then(|v| v["name"].as_str()),
+    "bio": u.as_ref().and_then(|v| v["bio"].as_str()),
+    "avatar": u.as_ref().and_then(|v| v["avatar_url"].as_str()),
+    "location": u.as_ref().and_then(|v| v["location"].as_str()),
+    "company": u.as_ref().and_then(|v| v["company"].as_str()),
+    "blog": u.as_ref().and_then(|v| v["blog"].as_str()),
+    "followers": u.as_ref().and_then(|v| v["followers"].as_i64()),
+    "following": u.as_ref().and_then(|v| v["following"].as_i64()),
+    "public_repos": u.as_ref().and_then(|v| v["public_repos"].as_i64()),
+    "created_at": u.as_ref().and_then(|v| v["created_at"].as_str()),
+    "url": u.as_ref().and_then(|v| v["html_url"].as_str()),
+    "popular": by_stars.iter().take(6).cloned().collect::<Vec<_>>(),
+    "recent": by_updated.iter().take(6).cloned().collect::<Vec<_>>(),
+    "repo_count": by_updated.len(),
+    "activity": days.iter().map(|(d, c)| serde_json::json!({"date": d, "count": c})).collect::<Vec<_>>(),
+    "event_count": ev_total,
+    "fetched_at": ts,
+  });
+  conn.execute("INSERT OR REPLACE INTO profile_cache(login, body, fetched_at) VALUES(?1,?2,?3)",
+    params![&login, out.to_string(), ts]).ok();
+  emit(format!("[profile] @{login} 仓库 {} 个、事件 {ev_total} 条（{} 天有活动）",
+    by_updated.len(), days.len()));
+  Ok(out)
+}
+
 // ================================================================ 界面要的四个入口（P6）
 /// 按通道取一页。channel=None 表示全部。
 /// 通道是"内容从哪来"的标签，不是"给用户看第几个 tab"的标签 —— 两者必须能对上，

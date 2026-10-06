@@ -152,6 +152,41 @@ export type MeReport = {
   fitted_at: number;
 };
 
+/** GitHub 侧的"我"：由 my_profile 现取，15 分钟缓存 */
+export type Repo = {
+  name: string;
+  full_name: string;
+  description: string | null;
+  url: string;
+  language: string | null;
+  stars: number;
+  forks: number;
+  issues: number;
+  fork: boolean;
+  archived: boolean;
+  pushed_at: string;
+};
+export type GhProfile = {
+  login: string;
+  name: string | null;
+  bio: string | null;
+  avatar: string | null;
+  location: string | null;
+  company: string | null;
+  blog: string | null;
+  followers: number | null;
+  following: number | null;
+  public_repos: number | null;
+  created_at: string | null;
+  url: string | null;
+  popular: Repo[];
+  recent: Repo[];
+  repo_count: number;
+  activity: { date: string; count: number }[];
+  event_count: number;
+  fetched_at: number;
+};
+
 /** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */
 export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
