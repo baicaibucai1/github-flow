@@ -49,6 +49,8 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
   const [lists, setLists] = useState<Record<string, ListResult>>({});
   const [listErr, setListErr] = useState<Record<string, string>>({});
   const [busyList, setBusyList] = useState("");
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
   useEffect(() => {
     let alive = true;
@@ -76,26 +78,25 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
     if (desc) requestTranslate([desc]);
   }, [desc]);
 
-  // 停留计时：每 5s 落一条 dwell，附带阅读深度；离开时补最后一段
+  // 停留计时：每 5s 落一条 dwell，附带阅读深度；离开时补最后一段。
+  // payload 里必须带 tab：现在详情页有四个页签，"在看 README" 与 "在翻文件树"
+  // 是两个完全不同的信号，合成一条 dwell 就把这条训练数据的语义搅浑了。
   useEffect(() => {
     if (!d?.id) return;
     const id = d.id;
     let start = Date.now();
+    const payload = (ms: number) => JSON.stringify({ ms, readDepth: depth(rdRef.current), tab: tabRef.current });
     const tick = window.setInterval(() => {
       const ms = Date.now() - start;
       start = Date.now();
       if (ms < 1000) return;
-      void logEvent("dwell", id, JSON.stringify({ ms, readDepth: depth(rdRef.current) })).catch(() => {});
+      void logEvent("dwell", id, payload(ms)).catch(() => {});
     }, 5000);
     return () => {
       window.clearInterval(tick);
       const ms = Date.now() - start;
       if (ms >= 1000) {
-        void call("log_event", {
-          kind: "dwell",
-          repoId: id,
-          payload: JSON.stringify({ ms, readDepth: depth(rdRef.current) }),
-        }).catch(() => {});
+        void call("log_event", { kind: "dwell", repoId: id, payload: payload(ms) }).catch(() => {});
         log(`dwell final ${id} ${ms}ms`);
       }
     };

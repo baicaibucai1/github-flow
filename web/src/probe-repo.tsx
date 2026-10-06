@@ -67,6 +67,7 @@ const LIST: Record<string, unknown> = {
 };
 
 const calls: string[] = [];
+const dwells: { ms: number; readDepth: number; tab: string }[] = [];
 const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unknown };
 w.__TAURI_INTERNALS__ = {
   transformCallback: (cb: () => void) => cb,
@@ -78,6 +79,7 @@ w.__TAURI_INTERNALS__ = {
     if (cmd === "repo_tree") return TREE;
     if (cmd === "repo_file_read") return FILES[args.path as string] ?? { path: args.path, bytes: 0, truncated: false, binary: false, text: "" };
     if (cmd === "repo_list") return LIST[args.kind as string];
+    if (cmd === "log_event" && args.kind === "dwell") dwells.push(JSON.parse(String(args.payload)));
     return {};
   },
 };
@@ -96,9 +98,8 @@ async function run() {
     await sleep(ms);
   };
 
-  createRoot(document.getElementById("root")!).render(
-    <DetailView repoId={123} onBack={() => undefined} onNotice={() => undefined} />
-  );
+  const root = createRoot(document.getElementById("root")!);
+  root.render(<DetailView repoId={123} onBack={() => undefined} onNotice={() => undefined} />);
   await sleep(500);
 
   ok("四个页签都在", ["概览", "文件", "Issues", "Pull requests"].every((t) => txt().includes(t)));
@@ -138,6 +139,15 @@ async function run() {
   await click(one("nav button", "Pull requests"), 320);
   ok("PR 页签只有 PR，且 draft 标出来了", txt().includes("探针 PR 一") && txt().includes("draft"));
   ok("切页签不重发已取过的列表", calls.filter((c) => c === "repo_list:issue").length === 1, calls.filter((c) => c.startsWith("repo_list")).join(","));
+
+  // 卸载会补最后一条 dwell：借这一步验 dwell 到底带没带页签。
+  // 现在详情页有四个页签，"在读 README" 与 "在翻文件树" 是两个不同的信号，
+  // 合成一条 dwell 等于把最好的训练数据搅浑（这条只有行为能验，静态断言盯不住）。
+  root.unmount();
+  await sleep(300);
+  const last = dwells[dwells.length - 1];
+  ok("dwell 带得清是哪个页签（不再只有一条糊在一起的 ms+readDepth）",
+    !!last && last.tab === "pulls" && last.ms >= 1000, JSON.stringify(last ?? {}));
 
   w.__PROBE__ = R;
   showResults(R, calls, errs);
