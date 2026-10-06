@@ -1488,6 +1488,168 @@ pub fn open_webview(app: &tauri::AppHandle, url: &str, repo_id: i64) -> Result<S
   Ok("已打开应用内浏览窗口".into())
 }
 
+// ================================================================ 仓库视图：树 / 单文件 / Issues / PR
+// 这条把 D9 的边界往前挪了一小步，但只挪一步：这里取的是**读材与列表**
+// （文件树、单个文件内容、issue 列表、PR 列表）。blame、CI 日志、Discussions
+// 仍然按 9.6 的结论交给内嵌 WebView，不在应用里重造 GitHub 前端。
+// 缓存分三档：分支 1 天、树 1 小时、文件 6 小时、issue/PR 10 分钟 ——
+// 因为切来切去的是同几个仓库，不缓存会在几分钟里把 5000 次/小时烧穿。
+
+fn ensure_repo_files(conn: &Connection) {
+  conn.execute_batch(
+    "CREATE TABLE IF NOT EXISTS repo_file(repo_id INTEGER NOT NULL, path TEXT NOT NULL,
+        kind TEXT NOT NULL, body TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+        PRIMARY KEY(repo_id, path, kind));",
+  ).ok();
+}
+
+fn repo_full(conn: &Connection, id: i64) -> Option<String> {
+  conn.query_row("SELECT full_name FROM repo WHERE id=?1", params![id], |r| r.get::<_, String>(0)).ok()
+}
+
+fn cache_get(conn: &Connection, id: i64, path: &str, kind: &str, ttl: i64) -> Option<String> {
+  conn.query_row("SELECT body FROM repo_file WHERE repo_id=?1 AND path=?2 AND kind=?3 AND fetched_at > ?4",
+    params![id, path, kind, now_s() - ttl], |r| r.get::<_, String>(0)).ok()
+}
+
+fn cache_put(conn: &Connection, id: i64, path: &str, kind: &str, body: &str) {
+  ensure_repo_files(conn);
+  conn.execute("INSERT OR REPLACE INTO repo_file(repo_id, path, kind, body, fetched_at) VALUES(?1,?2,?3,?4,?5)",
+    params![id, path, kind, body, now_s()]).ok();
+}
+
+/// URL 路径段要百分号编码（空格是 %20 不是 +，跟表单编码不一样），但 '/' 要留着
+fn path_encode(s: &str) -> String {
+  s.bytes().map(|b| match b {
+    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => (b as char).to_string(),
+    _ => format!("%{b:02X}"),
+  }).collect()
+}
+
+/// 默认分支：树要按分支名取，而库里没存这个字段，所以现拿一次并缓存一天
+fn default_branch(conn: &Connection, id: i64, full: &str, emit: &mut dyn FnMut(String)) -> String {
+  if let Some(c) = cache_get(conn, id, "", "branch", 86_400) { return c; }
+  let v: Option<serde_json::Value> = {
+    let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+    h.get_json(&format!("/repos/{full}"), &BTreeMap::new(), "core", emit)
+  };
+  let b = v.and_then(|x| x["default_branch"].as_str().map(|s| s.to_string()))
+    .unwrap_or_else(|| "main".into());
+  emit(format!("[tree] 默认分支 {b}"));
+  cache_put(conn, id, "", "branch", &b);
+  b
+}
+
+/// 文件树：一次 recursive 请求拿全，前端自己折叠。上限 4000 条，超了标 truncated。
+pub fn repo_tree(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = repo_full(conn, id).ok_or("库里没有这个项目")?;
+  if let Some(c) = cache_get(conn, id, "", "tree", 3_600) {
+    emit("[tree] 命中 1 小时缓存".into());
+    return Ok(serde_json::from_str(&c).map_err(|e| e.to_string())?);
+  }
+  let branch = default_branch(conn, id, &full, emit);
+  let mut q = BTreeMap::new();
+  q.insert("recursive", "1".to_string());
+  let v: Option<serde_json::Value> = {
+    let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+    h.probe(emit);
+    h.get_json(&format!("/repos/{full}/git/trees/{branch}"), &q, "core", emit)
+  };
+  let v = v.ok_or("取不到文件树（仓库可能是空的，或配额不够）")?;
+  let mut entries: Vec<serde_json::Value> = v["tree"].as_array().map(|arr| {
+    arr.iter().filter_map(|e| {
+      let p = e["path"].as_str()?;
+      Some(serde_json::json!({
+        "path": p,
+        "dir": e["type"].as_str() == Some("tree"),
+        "size": e["size"].as_i64().unwrap_or(0),
+      }))
+    }).collect()
+  }).unwrap_or_default();
+  let over = entries.len() > 4_000;
+  if over { entries.truncate(4_000); }
+  entries.sort_by(|a, b| a["path"].as_str().unwrap_or("").cmp(b["path"].as_str().unwrap_or("")));
+  let out = serde_json::json!({
+    "branch": branch, "entries": entries, "count": entries.len(),
+    "truncated": over || v["truncated"].as_bool().unwrap_or(false),
+  });
+  cache_put(conn, id, "", "tree", &out.to_string());
+  emit(format!("[tree] {} 条（分支 {branch}）", entries.len()));
+  Ok(out)
+}
+
+/// 单个文件内容：走官方 raw 媒体类型，省掉 base64 解码这一步。
+/// 超过 200KB 只给前 200KB 并说明；含 NUL 字节就当二进制不预览。
+pub fn repo_file_read(conn: &Connection, id: i64, path: &str, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = repo_full(conn, id).ok_or("库里没有这个项目")?;
+  const MAX: usize = 200_000;
+  if let Some(c) = cache_get(conn, id, path, "file", 6 * 3_600) {
+    return Ok(serde_json::from_str(&c).map_err(|e| e.to_string())?);
+  }
+  let url = format!("{API}/repos/{full}/contents/{}", path_encode(path));
+  let body = G!(&url)
+    .header("User-Agent", UA)
+    .header("Accept", "application/vnd.github.raw")
+    .call()
+    .and_then(|r| {
+      use std::io::Read;
+      let mut buf = Vec::new();
+      let mut r = r;
+      r.body_mut().as_reader().take((MAX + 1) as u64).read_to_end(&mut buf)?;
+      Ok::<Vec<u8>, ureq::Error>(buf)
+    })
+    .map_err(|e| format!("读不到 {path}：{e}"))?;
+  let binary = body.contains(&0u8);
+  let text = String::from_utf8_lossy(&body).to_string();
+  let out = serde_json::json!({
+    "path": path,
+    "bytes": body.len(),
+    "truncated": body.len() > MAX,
+    "binary": binary,
+    "text": if binary { String::new() } else { text.chars().take(MAX).collect::<String>() },
+  });
+  cache_put(conn, id, path, "file", &out.to_string());
+  emit(format!("[file] {path} {}B{}", body.len(), if binary { "（二进制，不预览）" } else { "" }));
+  Ok(out)
+}
+
+/// issue 与 PR 列表。GitHub 的 /issues 会把 PR 一起返回（带 pull_request 字段），
+/// 所以 kind=issue 时必须把它们滤掉，否则两个列表看起来一样。
+pub fn repo_list(conn: &Connection, id: i64, kind: &str, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+  let full = repo_full(conn, id).ok_or("库里没有这个项目")?;
+  let kind = if kind == "pull" { "pull" } else { "issue" };
+  if let Some(c) = cache_get(conn, id, "", kind, 600) {
+    return Ok(serde_json::from_str(&c).map_err(|e| e.to_string())?);
+  }
+  let mut q = BTreeMap::new();
+  q.insert("state", "open".to_string());
+  q.insert("per_page", "30".to_string());
+  q.insert("sort", "created".to_string());
+  let path = if kind == "pull" { format!("/repos/{full}/pulls") } else { format!("/repos/{full}/issues") };
+  let v: Option<Vec<serde_json::Value>> = {
+    let mut h = Http { core_left: 999, search_left: 999, tok: None }.authed();
+    h.probe(emit);
+    h.get_json(&path, &q, "core", emit)
+  };
+  let rows = v.unwrap_or_default();
+  let items: Vec<serde_json::Value> = rows.iter()
+    .filter(|x| if kind == "issue" { x.get("pull_request").is_none() } else { true })
+    .map(|x| serde_json::json!({
+      "number": x["number"],
+      "title": x["title"].as_str().unwrap_or(""),
+      "author": x["user"]["login"].as_str().unwrap_or(""),
+      "created_at": x["created_at"].as_str().unwrap_or(""),
+      "comments": x["comments"].as_i64().or_else(|| x["review_comments"].as_i64()).unwrap_or(0),
+      "draft": x["draft"].as_bool().unwrap_or(false),
+      "labels": x["labels"].as_array().map(|a| a.iter().filter_map(|l| l["name"].as_str().map(String::from)).collect::<Vec<_>>()).unwrap_or_default(),
+    }))
+    .collect();
+  let out = serde_json::json!({ "kind": kind, "items": items, "count": items.len() });
+  cache_put(conn, id, "", kind, &out.to_string());
+  emit(format!("[{kind}] {} 条", items.len()));
+  Ok(out)
+}
+
 // ================================================================ 凭据与"用我自己的账号"
 // token 只存 accounts.json，不进 SQLite —— 把库文件拷走或发给别人调试时不会连带把凭据带出去。
 // 正式版本要换成系统钥匙串（Windows 凭据管理器 / Keychain / Secret Service），因为

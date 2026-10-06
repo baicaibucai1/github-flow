@@ -6,7 +6,8 @@
 
 **修订记录**
 
-- **v0.1.1（本轮）**：新增 9.6（内嵌浏览 + 重排版能力，已实测）；D6/L2 关闭（自建源码浏览器取消，交 WebView）；新增 D9/D10；**纠正 5.3 的斜率公式**（born7 项目只有一个周桶，原公式算不出来，改用 `days[]` 有效日前缀）；**纠正 R2**（无 star 门槛会把整个新秀通道判成刷量）；新增陈旧性按通道分档；9.1/9.3 事件补 `webview_open`/`webview_close`；第 11 节补三条"已验证但限定用途"的条目。
+- **v0.1.2（本轮）**：程序改名叫 **Github Flow**，顶部换成原生菜单（应用 / 编辑），图标换成手绘 SVG；界面全线换成 GitHub 自己的版式（Soda 组件箱 + `data-set="github"` token 集，见 D11）；**L2 边界往前挪一步**：文件树、单文件只读预览、issue / PR 列表改为应用内自绘并走 API（新增 3.8 的两张缓存表与 9.2 的四条约束），blame / CI / Discussions 仍在 WebView 那侧；实测认证态额度 core 5000/h（关掉第 1 节里那条"未验证"）。
+- **v0.1.1**：新增 9.6（内嵌浏览 + 重排版能力，已实测）；D6/L2 关闭（自建源码浏览器取消，交 WebView）；新增 D9/D10；**纠正 5.3 的斜率公式**（born7 项目只有一个周桶，原公式算不出来，改用 `days[]` 有效日前缀）；**纠正 R2**（无 star 门槛会把整个新秀通道判成刷量）；新增陈旧性按通道分档；9.1/9.3 事件补 `webview_open`/`webview_close`；第 11 节补三条"已验证但限定用途"的条目。
 - **v0.1**：首版。
 
 ---
@@ -23,7 +24,7 @@
 | D6 | 项目内容默认**在应用内自绘展示，点卡片永不自动跳浏览器**；但保留三个显式出口并当作信号记录 | 已修订（见 9.2、9.5） |
 | D7 | `in:readme` 与 `topic:` 作为召回源**永久禁用** | 本手册推出，需你确认 |
 | D8 | 不做匿名模式（未登录时不承诺任何推荐能力） | 本手册推出，需你确认 |
-| D9 | **内嵌浏览 + 自绘重排版能力已实测成立**（见 9.6）；但程序化取数一律走 API，WebView 只作用户视角的逃生舱 | 已实测（本轮） |
+| D9 | **内嵌浏览 + 自绘重排版能力已实测成立**（见 9.6）；但程序化取数一律走 API，WebView 只作用户视角的逃生舱。**v0.1.2 收窄了"自绘"的范围**：文件树、单文件只读预览、issue/PR 列表改为应用内自绘（数据全走 API，见 9.7），WebView 仍只管 blame/CI/Discussions 这类 API 拿不全的深水区 | 已实测（本轮） |
 | D10 | ~~Tauri 必须用 MSVC~~ **已被推翻：windows-gnu 可行**。单独拉最新 `wry` 会导入 `api-ms-win-core-winrt-error-l1-1-0.dll`（该 API set 在 Win11 上不作为文件存在）导致起不来；改用 `web2exe-tauri` 模板里那套锁定的 tauri/wry 版本并把 MinGW 放进 PATH，GNU 产物正常运行——本仓库整个应用已连日在 `x86_64-pc-windows-gnu` 上跑通 | 已实测（推翻 v0.1.1 结论） |
 | D11 | **界面层直接采用 Soda UI**（组件箱 + 页面骨架 + token 真源，源码落进本仓库 `soda/`）。取数出入口仍然只有 Rust：不引入 `@tauri-apps/plugin-sql`，前端不许写 SQL、不许自己排序打分 | 已实测 |
 
@@ -341,6 +342,26 @@ CREATE TABLE model_weight (
 );
 ```
 
+### 3.8 详情页缓存（两张"网络代价"表，不是业务数据）
+
+这两张表存的都不是采集结果，而是**同一份 GitHub 返回的副本**，删掉了下次联网重取即可，所以不进备份、不参与排序、不做迁移。
+
+```sql
+-- README 的官方渲染 HTML + releases/languages 附属串，缓存 7 天
+CREATE TABLE IF NOT EXISTS doc_cache(
+  repo_id INTEGER NOT NULL, readme TEXT NOT NULL, extra TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL, PRIMARY KEY(repo_id));
+
+-- v0.1.2 的仓库视图：树 / 单文件 / issue 列表 / PR 列表 / 默认分支
+-- 主键含 kind，所以同一仓库的这五类各占一行，互不覆盖
+CREATE TABLE IF NOT EXISTS repo_file(
+  repo_id INTEGER NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL,
+  body TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+  PRIMARY KEY(repo_id, path, kind));
+```
+
+`repo_file.path` 对树、列表、分支三类是空串（它们按仓库唯一），只有 `kind='file'` 时才是仓库内相对路径。TTL 不落在列上，写在取数函数里按 `kind` 分档（见 9.2 的四条约束），因为过期策略是代码行为而不是数据。
+
 ---
 
 ## 4. 通道一：画像驱动抓取
@@ -600,10 +621,20 @@ neg_weight(slot) = 1 / log2(slot + 2)      -- 名次越靠后，"没点"越不�
 |---|---|---|---|---|
 | **L0 卡片** | 名称、简介、语言、star 曲线缩略、推荐理由 | **必须** | 0（候选池已有） | 决策发生在这里，曝光也在这里 |
 | **L1 详情页** | README 渲染、最近 release、contributors、open issues 摘要、语言构成、完整 star 曲线 | **必须** | 1~4 次 core/次点开 | 这是全部行为信号（停留、滚动、动作计数）的来源，也是"值不值得深入"的判断材料 |
-| **L2 源码/深度浏览** | 文件树、blame、CI 日志、Discussions、通知页 | **不自绘，交给内嵌 WebView**（见 9.6） | 0（WebView 内由 GitHub 自己请求） | 实测证明 WebView 能正常加载 github.com（HTTP 200），自建源码浏览器是重复造轮子 |
+| **L2 源码/深度浏览** | 文件树、单文件只读预览、open issue / PR 列表 | **自绘**（v0.1.2 起） | 树 1 次、每个文件 1 次、每个列表 1 次 core | 三条都有现成只读端点且返回的是**数据**不是页面：`git/trees/{分支}?recursive=1`、`contents/{路径}` 配 `Accept: application/vnd.github.raw`、`/issues` 与 `/pulls`。拿到的是一棵树和一段文本，不是别人的前端 |
+| **L2′ 深水区** | blame 逐行、CI 日志分片、Discussions、通知页 | **不自绘，交内嵌 WebView**（见 9.6） | 0（WebView 内由 GitHub 自己请求） | 这些要么没有等价端点，要么得把 GitHub 的前端逻辑重做一遍才有意义。9.6 已实测 WebView 能正常加载 github.com（HTTP 200），自建是重复造轮子 |
 | **L3 写操作** | 评论 issue、开 PR、改设置 | **不做** | — | 一做就变成 GitHub 客户端（D1 已否）；用户在浏览器里做这些更快且已登录 |
 
 L2 是这条链上唯一容易过度建设的口子，明确划界：**只读、不跳转、不编辑**。它的作用域止于"让我判断这东西靠不靠谱"。
+
+**v0.1.2 落地这一层时的四条约束**（写在码里，也钉在 `web/check-skin.mjs` 的断言里）：
+
+1. **一次拿全，不逐层问**。树用 `recursive=1` 一次取回（4000 条封顶，超了前端标"已截断"），目录层级由 `web/src/components/RepoTree.tsx` 从扁平路径自己拼。逐层展开 = 每个目录一次请求，点开三层就烧三次配额，而那棵树并没有变。
+2. **缓存按对象的变更频率分档**：默认分支 1 天、树 1 小时、单文件 6 小时、issue/PR 列表 10 分钟。一刀切成"都缓存一小时"会在切来切去看同几个仓库时把 5000 次/小时烧穿，一刀切成"都不缓存"则在一次会话里重复取同一棵树。落库在 `repo_file(repo_id, path, kind, body, fetched_at)`，主键含 `kind`，所以同一仓库的树/文件/列表互不覆盖。
+3. **`/issues` 会把 PR 一起返回**（带 `pull_request` 字段）。`kind=issue` 必须把它们滤掉，否则 Issues 与 Pull requests 两个页签看起来一样。实测：react/react 开放 issue 8 条、PR 30 条，滤后交集 0。
+4. **预览有护栏**：单文件取回上限 200 KB（`bytes` 报真实大小、`truncated` 标出来），含 NUL 字节判为二进制且不塞正文进界面，前端再叠一层 2000 行的渲染上限——4000 条目录里挑一个大文件是随手就能做的事。
+
+这一层不发任何写请求，也不进任何"评论/合并"入口（L3 仍然不做）。点了 issue 或"在 GitHub 打开"是把 URL 交给系统浏览器，回来仍然只有 URL 级观测。
 
 三个显式出口对应三个不同的事件，强度不同，**必须分开记，不要合成一个"外部打开"**：
 

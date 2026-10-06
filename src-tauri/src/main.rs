@@ -221,6 +221,30 @@ fn get_counts() -> Result<serde_json::Value, String> {
   Ok(feed::channel_counts(&c))
 }
 
+// ---- 仓库视图的三条命令：树 / 单文件 / issue 与 PR
+// 三条都带 emit 落到 ui.log，因为取数失败在界面上只会表现成"空"，
+// 没有日志就分不清是配额、分支名还是仓库本身是空的。
+#[tauri::command]
+fn repo_tree(repo_id: i64) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::repo_tree(&c, repo_id, &mut sink)
+}
+
+#[tauri::command]
+fn repo_file_read(repo_id: i64, path: String) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::repo_file_read(&c, repo_id, &path, &mut sink)
+}
+
+#[tauri::command]
+fn repo_list(repo_id: i64, kind: String) -> Result<serde_json::Value, String> {
+  let c = feed::open_db()?;
+  let mut sink = |s: String| { let _ = js_log(s); };
+  feed::repo_list(&c, repo_id, &kind, &mut sink)
+}
+
 /// 顶部原生菜单：应用 / 编辑。
 /// 编辑菜单不只是看着像 —— Windows 上 webview 里的 Ctrl+C/V 要有原生编辑菜单项
 /// 才会稳定生效，没有它复制 clone 命令那种操作会时灵时不灵。
@@ -274,7 +298,7 @@ fn main() {
       build_menu(app)?;
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

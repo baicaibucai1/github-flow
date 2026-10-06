@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Skeleton } from "@soda/ui";
 import { Bar, BarChart, XAxis, YAxis } from "recharts";
-import { ChevronLeftIcon } from "lucide-react";
+import { ChevronLeftIcon, MessageSquareIcon } from "lucide-react";
 import {
   call,
   log,
   n,
   openExternal,
+  relTime,
+  repoList,
   type Detail,
+  type ListResult,
 } from "../lib/bridge";
 import { logEvent } from "../lib/exposure";
 import { requestTranslate, setDbg, useApp, useDbg } from "../lib/store";
-import { Box, BoxEmpty, BoxRow, LangDot } from "../components/gh";
+import { Box, BoxEmpty, BoxRow, LangDot, UnderlineNav } from "../components/gh";
+import { RepoTree } from "../components/RepoTree";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@soda/ui";
 
 const chartConfig = { stars: { label: "这一周新增 star", color: "var(--primary)" } };
@@ -38,6 +42,13 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
   const [d, setD] = useState<Detail | null>(null);
   const [err, setErr] = useState("");
   const rdRef = useRef<HTMLDivElement | null>(null);
+
+  // 概览 / 文件 / Issues / Pull requests。树和两个列表都是懒加载：
+  // 只看 README 的那次点开不该顺手多烧三次配额（列表缓存 10 分钟，树 1 小时）。
+  const [tab, setTab] = useState("overview");
+  const [lists, setLists] = useState<Record<string, ListResult>>({});
+  const [listErr, setListErr] = useState<Record<string, string>>({});
+  const [busyList, setBusyList] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -107,6 +118,24 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
     }, 4000);
     return () => window.clearTimeout(t);
   }, [d]);
+
+  // 换一个仓库就回到概览：列表缓存按 repo.id 存，带着上一个仓库的条数过来会读错数
+  useEffect(() => {
+    setTab("overview");
+    setLists({});
+    setListErr({});
+  }, [repoId]);
+
+  const kindOf = (t: string) => (t === "issues" ? "issue" : t === "pulls" ? "pull" : "");
+  useEffect(() => {
+    const k = kindOf(tab);
+    if (!k || !d?.id || lists[k] || listErr[k]) return;
+    setBusyList(k);
+    repoList(d.id, k as "issue" | "pull")
+      .then((r) => (r.error ? setListErr((s) => ({ ...s, [k]: r.error as string })) : setLists((s) => ({ ...s, [k]: r }))))
+      .catch((e) => setListErr((s) => ({ ...s, [k]: String(e) })))
+      .finally(() => setBusyList(""));
+  }, [tab, d, lists, listErr]);
 
   const curve = useMemo(() => {
     const w = [...(d?.weeks ?? [])].reverse();
@@ -225,6 +254,18 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
         </div>
       </div>
 
+      <UnderlineNav
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: "overview", label: "概览" },
+          { value: "files", label: "文件" },
+          { value: "issues", label: "Issues", count: lists.issue?.count ?? null },
+          { value: "pulls", label: "Pull requests", count: lists.pull?.count ?? null },
+        ]}
+      />
+
+      {tab === "overview" ? (
       <div className="grid gap-md lg:grid-cols-[minmax(0,1fr)_320px]">
         <Box
           title="README"
@@ -312,7 +353,92 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
           </Box>
         </div>
       </div>
+      ) : null}
+
+      {tab === "files" ? <RepoTree repoId={d.id!} fullName={d.full_name ?? ""} onNotice={onNotice} /> : null}
+
+      {tab === "issues" || tab === "pulls" ? (
+        <ListPane
+          kind={tab === "issues" ? "issue" : "pull"}
+          fullName={d.full_name ?? ""}
+          res={lists[tab === "issues" ? "issue" : "pull"]}
+          err={listErr[tab === "issues" ? "issue" : "pull"]}
+          busy={busyList === (tab === "issues" ? "issue" : "pull")}
+          onOpen={(u) => openExternal(u).catch((e) => onNotice("没打开：" + String(e)))}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Issue / PR 列表。GitHub 的 /issues 会把 PR 一起返回，所以"滤掉 PR"这件事在
+ * Rust 侧做（feed.rs repo_list）；这里只管摆出来。点一条 = 交给系统浏览器，
+ * 应用里不做评论、不做合并 —— 那是写操作，越过了只读的边界。
+ */
+function ListPane({
+  kind,
+  fullName,
+  res,
+  err,
+  busy,
+  onOpen,
+}: {
+  kind: "issue" | "pull";
+  fullName: string;
+  res?: ListResult;
+  err?: string;
+  busy: boolean;
+  onOpen: (u: string) => void;
+}) {
+  const label = kind === "issue" ? "Issues" : "Pull requests";
+  return (
+    <Box
+      title={label}
+      aside={
+        <span className="flex items-center gap-xs">
+          {res ? `${res.count} 条 · 只列 open 的最新 30 条` : ""}
+          <Button size="xs" variant="ghost" onClick={() => onOpen(`https://github.com/${fullName}/${kind === "issue" ? "issues" : "pulls"}`)}>
+            在 GitHub 打开{label}
+          </Button>
+        </span>
+      }
+    >
+      {busy ? (
+        [0, 1, 2].map((i) => (
+          <BoxRow key={i} className="py-sm">
+            <Skeleton className="h-4 w-2/3" />
+          </BoxRow>
+        ))
+      ) : err ? (
+        <BoxEmpty>{err}</BoxEmpty>
+      ) : !res?.items.length ? (
+        <BoxEmpty>没有打开的{label}，或者取不到（配额、私有仓库都会是这个样子）</BoxEmpty>
+      ) : (
+        res.items.map((it) => (
+          <BoxRow key={it.number}>
+            <button
+              className="flex w-full flex-col gap-2xs text-start hover:underline"
+              onClick={() => onOpen(`https://github.com/${fullName}/${kind === "issue" ? "issues" : "pull"}/${it.number}`)}
+            >
+              <span className="flex flex-wrap items-center gap-xs">
+                <b className="text-label">{it.title}</b>
+                {kind === "pull" && it.draft ? <Badge variant="outline">draft</Badge> : null}
+                {it.labels.slice(0, 3).map((l) => (
+                  <Badge key={l} variant="secondary" className="rounded-full">
+                    {l}
+                  </Badge>
+                ))}
+              </span>
+              <span className="flex items-center gap-xs text-caption text-muted-foreground tabular-nums">
+                <MessageSquareIcon className="size-3.5" />
+                {it.comments} 条讨论 · #{it.number} · {it.author} 开于 {relTime(it.created_at)}
+              </span>
+            </button>
+          </BoxRow>
+        ))
+      )}
+    </Box>
   );
 }
 

@@ -187,8 +187,49 @@ export type GhProfile = {
   fetched_at: number;
 };
 
-/** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */
-export const SESSION =
+/**
+ * 仓库视图的三条出入口。字段名与 feed.rs 里 repo_tree / repo_file_read / repo_list
+ * 的 json! 键一一对应 —— 对不上就是 undefined，界面上表现为"空"，最难查。
+ */
+export type TreeEntry = { path: string; dir: boolean; size: number };
+export type TreeResult = {
+  branch: string;
+  entries: TreeEntry[];
+  count: number;
+  truncated: boolean;
+  error?: string;
+};
+export type FileResult = {
+  path: string;
+  bytes: number;
+  truncated: boolean;
+  binary: boolean;
+  text: string;
+  error?: string;
+};
+export type ListItem = {
+  number: number;
+  title: string;
+  author: string;
+  created_at: string;
+  comments: number;
+  draft: boolean;
+  labels: string[];
+};
+export type ListResult = { kind: string; items: ListItem[]; count: number; error?: string };
+
+/** 三条都按 repo.id 取；路径是仓库内的相对路径，原样交给 Rust 做百分号编码 */
+export function repoTree(id: number): Promise<TreeResult> {
+  return call<TreeResult>("repo_tree", { repoId: id });
+}
+export function repoFile(id: number, path: string): Promise<FileResult> {
+  return call<FileResult>("repo_file_read", { repoId: id, path });
+}
+export function repoList(id: number, kind: "issue" | "pull"): Promise<ListResult> {
+  return call<ListResult>("repo_list", { repoId: id, kind });
+}
+
+/** 一次进程生命周期 = 一个 session：曝光去重按 (repo_id, session) 唯一 */export const SESSION =
   Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
 
 export const LIMIT = 40;

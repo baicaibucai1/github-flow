@@ -122,6 +122,54 @@ fn main() {
     }
     return;
   }
+  // 本机没有 sqlite3 CLI，要看库里的 repo.id 只能靠这条（tree/file/list 都按 id 取）
+  if args.get(1).map(|s| s.as_str()) == Some("repos") {
+    let conn = feed::open_db().expect("打不开数据库");
+    let n: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(10);
+    let mut st = conn.prepare("SELECT id, full_name, stars FROM repo ORDER BY stars DESC LIMIT ?1").unwrap();
+    for r in st.query_map(rusqlite::params![n], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))).unwrap().flatten() {
+      println!("  id={:<6} {:<44} star={}", r.0, r.1, r.2);
+    }
+    return;
+  }
+  // ---- 仓库视图的三条：文件树 / 单文件 / issue 与 PR 列表
+  // 拿命令行先验一遍，是因为这三条要走网络与缓存；先看数据对不对，再去做界面，
+  // 不然界面出问题时分不清是前端还是取数。id 用库里的 repo.id（下面 list 命令能看到）。
+  if ["tree", "file", "list"].contains(&args.get(1).map(|s| s.as_str()).unwrap_or("")) {
+    let conn = feed::open_db().expect("打不开数据库");
+    let id: i64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let sub = args.get(1).unwrap().as_str();
+    let emit = &mut |m: String| println!("{m}");
+    let r = match sub {
+      "tree" => feed::repo_tree(&conn, id, emit),
+      "file" => feed::repo_file_read(&conn, id, args.get(3).map(|s| s.as_str()).unwrap_or("README.md"), emit),
+      _ => feed::repo_list(&conn, id, args.get(3).map(|s| s.as_str()).unwrap_or("issue"), emit),
+    };
+    match r {
+      Ok(v) => {
+        if sub == "tree" {
+          println!("分支={} 条目={} 截断={}", v["branch"], v["count"], v["truncated"]);
+          for e in v["entries"].as_array().unwrap_or(&vec![]).iter().take(15) {
+            println!("  {}{}", e["path"].as_str().unwrap_or(""), if e["dir"].as_bool().unwrap_or(false) { "/" } else { "" });
+          }
+        } else if sub == "file" {
+          println!("path={} 字节={} 二进制={} 截断={}", v["path"], v["bytes"], v["binary"], v["truncated"]);
+          for l in v["text"].as_str().unwrap_or("").lines().take(12) { println!("  | {l}"); }
+        } else {
+          println!("kind={} 条数={}", v["kind"], v["count"]);
+          for it in v["items"].as_array().unwrap_or(&vec![]).iter().take(10) {
+            println!("  #{} {} —— {}{} [{}]", it["number"], it["title"].as_str().unwrap_or(""),
+              it["author"].as_str().unwrap_or(""), if it["draft"].as_bool().unwrap_or(false) { " (draft)" } else { "" },
+              it["labels"].as_array().map(|a| a.len()).unwrap_or(0));
+          }
+        }
+        // 机器可读的一行：check-skin.mjs --live 靠它做行为断言（人看的摘要在上面）
+        println!("RAW {}", v);
+      }
+      Err(e) => println!("取不到：{e}"),
+    }
+    return;
+  }
   let conn = feed::open_db().expect("打不开数据库");
   if let Err(e) = feed::run_collect(&conn, pages, curves, &mut |m| println!("{m}")) {
     println!("[collect 失败] {e}");

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "cn";
-import { Button } from "@soda/ui";
+import { Badge, Button } from "@soda/ui";
 
 /**
  * GitHub 版式的公共词汇：一个带表头的盒子（Box）、盒子里的一行（BoxRow）、
@@ -162,6 +162,42 @@ export function Calendar({ days }: { days: { date: string; count: number }[] }) 
         多
       </div>
     </div>
+  );
+}
+
+/** GitHub 仓库页那条下划线导航：选中项加粗 + 主题色下划线，计数放在胶囊里。 */
+export function UnderlineNav({
+  items,
+  value,
+  onChange,
+}: {
+  items: { value: string; label: ReactNode; count?: number | null }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <nav className="flex flex-wrap items-center gap-sm border-b">
+      {items.map((it) => {
+        const on = it.value === value;
+        return (
+          <button
+            key={it.value}
+            onClick={() => onChange(it.value)}
+            className={cn(
+              "-mb-px flex items-center gap-2xs border-b-2 px-sm py-sm text-label hover:underline",
+              on ? "border-primary font-semibold" : "border-transparent text-muted-foreground"
+            )}
+          >
+            {it.label}
+            {it.count != null ? (
+              <Badge variant="secondary" className="rounded-full tabular-nums">
+                {it.count.toLocaleString()}
+              </Badge>
+            ) : null}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 

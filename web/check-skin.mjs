@@ -21,6 +21,13 @@ const store = readFileSync(join(web, "src", "lib", "store.tsx"), "utf8");
 const meview = readFileSync(join(web, "src", "views", "MeView.tsx"), "utf8");
 const settings = readFileSync(join(web, "src", "views", "SettingsView.tsx"), "utf8");
 const pkg = JSON.parse(readFileSync(join(web, "package.json"), "utf8"));
+// 仓库视图是跨语言的改动（Rust 取数 + command 注册 + 前端），所以断言也要跨过语言层
+const rust = readFileSync(join(web, "..", "src-tauri", "src", "feed.rs"), "utf8");
+const mainrs = readFileSync(join(web, "..", "src-tauri", "src", "main.rs"), "utf8");
+const bridge = readFileSync(join(web, "src", "lib", "bridge.ts"), "utf8");
+const detail = readFileSync(join(web, "src", "views", "DetailView.tsx"), "utf8");
+const treex = existsSync(join(web, "src", "components", "RepoTree.tsx"))
+  ? readFileSync(join(web, "src", "components", "RepoTree.tsx"), "utf8") : "";
 
 // 逐页：必须还在的信息块（钉可见文字，不钉实现细节）+ 不许回来的摆法
 const PAGES = [
@@ -39,8 +46,14 @@ const PAGES = [
   {
     file: "src/views/DetailView.tsx",
     name: "详情",
-    need: ["README", "语言构成", "最近 release", "应用内浏览 GitHub", "dwell", "star 增长"],
+    need: ["README", "语言构成", "最近 release", "应用内浏览 GitHub", "dwell", "star 增长", "概览", "Issues", "Pull requests"],
     ban: [/lg:grid-cols-12/],
+  },
+  {
+    file: "src/components/RepoTree.tsx",
+    name: "仓库文件树与预览",
+    need: ["二进制文件，不做预览", "已截断", "在 GitHub 打开"],
+    ban: [/dangerouslySetInnerHTML/],
   },
   {
     file: "src/views/SettingsView.tsx",
@@ -111,6 +124,47 @@ const CHECKS = [
     what: "Primer 的两个包已经从依赖里清掉",
     pass: !Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((k) => k.startsWith("@primer/")),
   },
+  // ---- 仓库视图（文件树 / 预览 / Issues / PR）
+  {
+    id: "rust-registered",
+    what: "三条命令在 Rust 侧有 #[tauri::command] 且已进 generate_handler（少了后者前端只会报 command not found）",
+    pass: ["repo_tree", "repo_file_read", "repo_list"].every(
+      (c) => new RegExp(`#\\[tauri::command\\][\\s\\S]{0,120}fn ${c}\\(`).test(mainrs) &&
+        /generate_handler!\[[^\]]*\brepo_tree\b[^\]]*\brepo_file_read\b[^\]]*\brepo_list\b[^\]]*\]/.test(mainrs)
+    ),
+  },
+  {
+    id: "rust-shape",
+    what: "取数侧的三条边界写在码里：issue 列表滤掉 PR、树 4000 条封顶、单文件 200KB 封顶",
+    pass: /pull_request/.test(rust) && /4_000/.test(rust) && /200_000/.test(rust),
+  },
+  {
+    id: "rust-cache",
+    what: "四类缓存 TTL 各自独立（分支 1 天 / 树 1 小时 / 文件 6 小时 / 列表 10 分钟），不是一刀切",
+    pass: /86_400/.test(rust) && /3_600/.test(rust) && /6 \* 3_600/.test(rust) && /600\b/.test(rust),
+  },
+  {
+    id: "ipc-types",
+    what: "bridge.ts 里三条命令有类型化的出入口（字段名跟 feed.rs 的 json! 键对齐）",
+    pass: /repo_tree/.test(bridge) && /repo_file_read/.test(bridge) && /repo_list/.test(bridge) &&
+      /TreeResult/.test(bridge) && /FileResult/.test(bridge) && /ListItem/.test(bridge),
+  },
+  {
+    id: "repo-nav",
+    what: "详情页有 GitHub 那条下划线导航：概览 / 文件 / Issues / Pull requests",
+    pass: /概览/.test(detail) && /文件/.test(detail) && /Issues/.test(detail) && /Pull requests/.test(detail),
+  },
+  {
+    id: "tree-collapse",
+    what: "文件树是扁平路径自己拼出层级、目录可展开收起（recursive 一次拿全，前端不逐层请求）",
+    pass: /function buildTree|const buildTree/.test(treex) && /expand|collapsed|open/.test(treex) &&
+      !/git\/trees\//.test(treex),
+  },
+  {
+    id: "preview-guard",
+    what: "代码预览有护栏：二进制不塞进界面、行数封顶、被截断要说",
+    pass: /binary/.test(treex) && /MAX_LINES|slice\(0,\s*\d+\)/.test(treex) && /truncated/.test(treex),
+  },
 ];
 
 let pass = 0;
@@ -134,6 +188,60 @@ for (const p of PAGES) {
   ok ? pass++ : fail++;
 }
 
+// ------------------------------------------------------------------ --live
+// 上面全是"源码里有没有这句话"级别的断言，钉不住取数本身对不对。加 --live 会真的
+// 驱动 collect.exe 打一次 GitHub，把四条行为事实钉住：树拿得到、文件读得动、
+// issue 列表不把 PR 混进来、第二次读命中缓存（这条是配额保护，不测就等于没做）。
+// 要联网、要已构建的 debug 产物，所以默认不跑：node check-skin.mjs --live
+const liveArg = process.argv.find((a) => a === "--live" || a.startsWith("--live="));
+if (liveArg) {
+  const { execFileSync } = await import("node:child_process");
+  const exe = join(web, "..", "src-tauri", "target", "debug", "collect.exe");
+  const LIVE = [];
+  if (!existsSync(exe)) {
+    console.log("\n### --live：collect.exe 不在，先跑 cargo build --bin collect");
+  } else {
+    const run = (a) => execFileSync(exe, a, { encoding: "utf8", timeout: 180_000, maxBuffer: 32e6 });
+    const raw = (a) => {
+      const out = run(a);
+      const line = out.split("\n").find((l) => l.startsWith("RAW "));
+      return { out, v: line ? JSON.parse(line.slice(4)) : null };
+    };
+    let id = Number(liveArg.split("=")[1]) || 0;
+    if (!id) {
+      // 优先挑一个既有 issue 又有 PR 的仓库，否则"两边编号不相交"这条会空过
+      const list = run(["repos", "400"]);
+      id = Number((list.match(/id=(\d+)\s+react\/react\b/) || list.match(/id=(\d+)/) || [])[1]);
+    }
+    try {
+      const t = raw(["tree", String(id)]);
+      LIVE.push(["tree 拿得到条目", !!t.v && t.v.count > 0 && t.v.entries.every((e) => typeof e.path === "string" && typeof e.dir === "boolean") && !!t.v.branch]);
+      const f0 = t.v.entries.find((e) => !e.dir && /\.md$/i.test(e.path)) || t.v.entries.find((e) => !e.dir);
+      const f = raw(["file", String(id), f0.path]);
+      LIVE.push(["file 读得出内容（文本有字节，二进制就明说不预览）",
+        !!f.v && f.v.bytes > 0 && (f.v.binary ? f.v.text === "" : f.v.text.length > 0)]);
+      const i = raw(["list", String(id), "issue"]);
+      const p = raw(["list", String(id), "pull"]);
+      const inum = new Set((i.v?.items ?? []).map((x) => x.number));
+      const pnum = new Set((p.v?.items ?? []).map((x) => x.number));
+      const mixed = [...inum].filter((x) => pnum.has(x));
+      LIVE.push([`issue 列表没混进 PR（issue ${inum.size} 条 / pull ${pnum.size} 条，交集 ${mixed.length}）`,
+        inum.size > 0 && pnum.size > 0 && mixed.length === 0]);
+      const again = run(["tree", String(id)]);
+      LIVE.push(["第二次读树命中缓存，不再打 API", again.includes("命中 1 小时缓存")]);
+    } catch (e) {
+      LIVE.push(["live 跑通了（上面若有 FAIL 是这条没执行）", false]);
+      console.log("  live 异常：" + String(e).slice(0, 200));
+    }
+    console.log(`\n### --live（repo id=${id}，真打 GitHub）`);
+    for (const [what, ok] of LIVE) {
+      console.log(`  ${ok ? "PASS" : "FAIL"}  ${what}`);
+      ok ? pass++ : fail++;
+    }
+  }
+}
+
 console.log(`\n=== 合计 ${pass} 通过 / ${fail} 失败 ===`);
 if (!existsSync(assetsDir)) console.log("（dist 不在，先跑 corepack pnpm@10 --filter web build）");
 process.exit(mode === "baseline" ? 0 : fail ? 1 : 0);
+
