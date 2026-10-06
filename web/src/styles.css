@@ -56,10 +56,8 @@
   --color-sidebar-border: var(--border);
   --color-sidebar-ring: var(--ring);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* 圆角不在这里派生：tokens.css 的 :root 块是无层 CSS，优先级高于 @layer theme，
+     在这里再写一遍只会变成"两边改一边要同步"的第二份真源。见 soda/theme/src/tokens.css */
 
   --shadow-sm: var(--shadow-sm);
   --font-sans: var(--font-sans);

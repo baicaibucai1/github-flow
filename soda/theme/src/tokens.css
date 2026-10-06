@@ -270,8 +270,14 @@
    派生量与全局基线
    ============================================================ */
 :root {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* ---------- 派生量与圆角 ----------
+     圆角用"减法"派生（-4px / -2px / +4px）是按 0.5~0.6rem 的基准设计的。
+     ink 集的基准只有 0.25rem，减完直接归零：同一屏里卡片 8px、按钮 2px、
+     菜单项与 README 图片 0px —— 看起来就是"有的地方不是圆角"。
+     给小档位加地板值：基准够大的主题集（soda/marine/sandbox）一次都不会触发 max()，
+     行为完全不变；只有被减穿的那一档被抬回来。 */
+  --radius-sm: max(3px, calc(var(--radius) - 4px));
+  --radius-md: max(4px, calc(var(--radius) - 2px));
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }

@@ -60,7 +60,7 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
     return (
       <div className="grid items-start gap-md p-md sm:grid-cols-2 2xl:grid-cols-3">
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="flex flex-col gap-sm rounded-lg border p-md">
+          <div key={i} className="flex flex-col gap-sm rounded-xl border p-md">
             <Skeleton className="h-5 w-2/5" />
             <Skeleton className="h-4 w-4/5" />
             <Skeleton className="h-4 w-full" />
