@@ -25,3 +25,4 @@ web/dist/
 *.tsbuildinfo
 install.log
 
+web/probe-dist/
