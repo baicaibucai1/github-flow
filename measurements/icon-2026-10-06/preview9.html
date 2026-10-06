@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Github Flow 图标 · 菱形由流组成</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:32px 40px 90px; font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; color:#1f2328; background:#fff; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  h2 { font-size:17px; margin:40px 0 2px; }
+  p { margin:0; }
+  .sub { color:#656d76; max-width:960px; }
+  .why { color:#656d76; max-width:960px; margin:2px 0 14px; }
+  .why b { color:#1f2328; font-weight:600; }
+  .row { display:flex; align-items:flex-end; gap:28px; flex-wrap:wrap; margin:0 0 12px; }
+  .cell { display:flex; flex-direction:column; align-items:center; gap:6px; margin:0; }
+  .cell figcaption { font-size:11px; color:#656d76; font-variant-numeric:tabular-nums; }
+  .strip { display:flex; align-items:center; gap:22px; padding:14px 20px; border:1px solid #d0d7da; border-radius:10px; }
+  .strip.dark { background:#0d1117; border-color:#0d1117; }
+  .strip.dark figcaption { color:#8b949e; }
+  .note { background:#f6f8fa; border:1px solid #d0d7da; border-left:3px solid #3fb950; border-radius:8px; padding:14px 18px; max-width:960px; margin:0 0 10px; }
+  .note b { font-weight:600; }
+  .rec { background:#eaf7ee; border-color:#9fd7b0; }
+  .big { display:flex; gap:34px; align-items:flex-end; margin:0 0 10px; }
+</style>
+</head>
+<body>
+<h1>Github Flow · 菱形由流组成</h1>
+<p class="sub">换的是主次：不再"git 的标 + 一条流线"，而是<b>让流本身长成那个菱形</b>——五条长短不一的横条（信息流的条目）摞起来，外轮廓正好是 git 那个菱形。远看是 git，近看是一条条流过去的东西。最上面那条是绿的（最新/最热）。</p>
+
+<div class="note rec" style="margin-top:16px">
+  <p style="margin:0 0 6px"><b>我的推荐：方案 1</b>。它把两件事压进了一个动作里，而不是把两个图形叠在一起——<b>16px 上它退化成"一个菱形"（git 身份还在），256px 上你看到的是一条条流（信息流身份也在）</b>。这种"大尺寸看到细节、小尺寸剩下剪影"的做法，是图标设计里最稳的一条路。</p>
+  <p style="margin:0">方案 2 把每一条往右下错一点，动感更强、更像"在流"，但菱形会歪；方案 3 是保守版：菱形轮廓还在，三条流从它中间穿过去。</p>
+</div>
+
+<div id="out"></div>
+
+<h2>这一版凭什么不是"又一个丑的"</h2>
+<div class="note">
+  <p style="margin:0 0 6px"><b>① 一个动作说两件事</b>：前几轮都是把两个图形叠起来（菱形 + 流线、菱形 + 分叉），叠出来的东西在任何尺寸下都要"同时看两个形状"，所以又乱又难认。这一版只有一个形状——<b>横条</b>；菱形是这些横条长短变化的结果，不是另外画上去的。</p>
+  <p style="margin:0 0 6px"><b>② 尺寸变大时信息变多，变小时信息变少，但都不散</b>：五条横条在 16px 上糊成一个实心菱形，那是它能扛住任务栏的原因；在 256px 上你才看得到"一条一条"和那条绿色。</p>
+  <p style="margin:0"><b>③ 宽度是算出来的，不是随手给的</b>：菱形的数学是 |x-512| + |y-512| ≤ 370（半对角线 370），所以每一行的半宽 = 370 减去它到中心的距离。五行的宽度因此是 268 / 504 / 740 / 504 / 268——这个阶梯就是菱形的边。</p>
+</div>
+
+<script>
+const BLACK = "#0d1117", WHITE = "#ffffff", GREEN = "#3fb950";
+const C = 1024;
+const box = (inner) => `<svg viewBox="0 0 ${C} ${C}" xmlns="http://www.w3.org/2000/svg"><rect width="${C}" height="${C}" rx="230" fill="${BLACK}"/>${inner}</svg>`;
+/* 一行：中心 (cx,cy)，半宽 halfW，厚 h，两端圆头 */
+const row = (cx, cy, halfW, h, fill) =>
+  `<rect x="${(cx - halfW).toFixed(0)}" y="${(cy - h / 2).toFixed(0)}" width="${(halfW * 2).toFixed(0)}" height="${h}" rx="${h / 2}" fill="${fill}"/>`;
+/* 五行的高度与到中心的距离：行厚 92、行距 124 → 半宽按菱形公式算 */
+const H = 92, STEP = 124, HALF_DIAG = 370;
+const rows = (shiftX = 0) => [0, 1, 2, 3, 4].map((i) => {
+  const dy = (i - 2) * STEP;
+  const halfW = HALF_DIAG - Math.abs(dy);
+  const cx = 512 + (i - 2) * shiftX;
+  return row(cx, 512 + dy, halfW, H, i === 0 ? GREEN : WHITE);
+}).join("");
+
+/* 1 · 五行组成菱形（对称） */
+function diamondRows() { return box(rows(0)); }
+/* 2 · 同上，但每行向右错位 46：斜着流过去 */
+function drifting() { return box(rows(46)); }
+/* 3 · 保守版：菱形轮廓 + 三条流线穿过它（收在框内） */
+function through() {
+  const ring = `<rect x="250" y="250" width="524" height="524" rx="76" transform="rotate(45 512 512)" fill="none" stroke="${WHITE}" stroke-width="70"/>`;
+  return box(ring +
+    row(512, 400, 96, 84, GREEN) +
+    row(512, 512, 168, 84, WHITE) +
+    row(512, 624, 96, 84, WHITE));
+}
+
+const CANDS = [
+  { id: "1", name: "五条流组成菱形（推荐）", why: "五条长短不一的横条摞出一个菱形。<b>16px 上是一个干净的菱形（git 身份），256px 上是一条条流（信息流身份）</b>。最上面那条绿。", svg: diamondRows() },
+  { id: "2", name: "每行向右错位，斜着流过去", why: "同样的五条，但每行往右下错 46——<b>菱形变斜，动感更强</b>，更像「正在流」。代价：菱形歪了以后，「这是 git 那个菱形」的即时认读会弱一点。", svg: drifting() },
+  { id: "3", name: "保守版：菱形轮廓 + 三条流穿过", why: "菱形框还在，三条流线从中间穿过去。git 身份最明确，但这就是前几轮那个「两个图形叠起来」的老路，小尺寸最容易乱。", svg: through() },
+];
+
+const SIZES = [256, 128, 64, 48, 32, 16];
+const out = document.getElementById("out");
+for (const c of CANDS) {
+  const h2 = document.createElement("h2"); h2.textContent = `方案 ${c.id} · ${c.name}`;
+  const why = document.createElement("p"); why.className = "why"; why.innerHTML = c.why;
+  const rowEl = document.createElement("div"); rowEl.className = "row";
+  for (const px of SIZES) {
+    const fig = document.createElement("figure"); fig.className = "cell";
+    const b = document.createElement("div"); b.style.cssText = `width:${px}px;height:${px}px`; b.innerHTML = c.svg;
+    b.firstChild.setAttribute("width", px); b.firstChild.setAttribute("height", px);
+    const cap = document.createElement("figcaption"); cap.textContent = px + "px";
+    fig.append(b, cap); rowEl.appendChild(fig);
+  }
+  const dark = document.createElement("div"); dark.className = "strip dark";
+  const light = document.createElement("div"); light.className = "strip";
+  for (const strip of [dark, light]) {
+    for (const px of [48, 32]) {
+      const fig = document.createElement("figure"); fig.className = "cell";
+      const b = document.createElement("div"); b.style.cssText = `width:${px}px;height:${px}px`; b.innerHTML = c.svg;
+      b.firstChild.setAttribute("width", px); b.firstChild.setAttribute("height", px);
+      const cap = document.createElement("figcaption"); cap.textContent = (strip === dark ? "深色栏 " : "浅色栏 ") + px + "px";
+      fig.append(b, cap); strip.appendChild(fig);
+    }
+  }
+  out.append(h2, why, rowEl, dark, light);
+}
+</script>
+</body>
+</html>
