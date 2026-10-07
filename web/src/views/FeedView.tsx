@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Skeleton } from "@soda/ui";
+import { Button, Skeleton } from "@soda/ui";
 import { call, LIMIT, log, type Card } from "../lib/bridge";
-import { RepoRow } from "../components/RepoCard";
-import { Box, BoxEmpty, BoxRow, MoreRow } from "../components/gh";
+import { RepoCard } from "../components/RepoCard";
+import { Box, BoxEmpty, MoreRow } from "../components/gh";
 
 export type FeedViewProps = {
   channel: string;
@@ -24,7 +24,7 @@ const EMPTY_TEXT: Record<string, { title: string; desc: string }> = {
   hot: { title: "热度榜是空的", desc: "点「采集新数据」跑一轮，约 60~90 次请求。" },
 };
 
-/** 一屏 = 一个 Box，里面一行一个候选。分页是"显示更多"，不是无限滚。 */
+/** 一屏 = 双列卡片网格，一张卡一个候选；分页还是"显示更多"，不做无限滚（无限滚会把曝光判定和"看到第几屏"都冲掉）。 */
 export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   const [items, setItems] = useState<Card[]>([]);
   const [offset, setOffset] = useState(0);
@@ -54,17 +54,19 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   }, [channel, fetchPage]);
 
   if (phase === "loading") {
+    // 骨架跟着版式走：卡片就是卡片的样子，别给人"先列表后跳成网格"的错位
     return (
-      <div className="p-md">
-        <Box>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <BoxRow key={i} className="flex flex-col gap-xs">
-              <Skeleton className="h-4 w-1/4" />
+      <div className="@container grid gap-md p-md @lg:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="flex flex-col overflow-hidden rounded-md border bg-card">
+            <Skeleton className="h-44 w-full rounded-none" />
+            <div className="flex flex-col gap-xs p-md">
+              <Skeleton className="h-4 w-1/3" />
               <Skeleton className="h-3 w-2/3" />
-              <Skeleton className="h-3 w-1/3" />
-            </BoxRow>
-          ))}
-        </Box>
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -86,28 +88,21 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-md p-md">
-      <Box
-        title={`${items.length} 个候选`}
-        aside={
-          <span>
-            通道 {channel} · 排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权
-          </span>
-        }
-        footer={
-          phase === "done" ? (
-            <MoreRow label="已到底 —— 重新读取" onClick={() => void fetchPage(0)} />
-          ) : (
-            <MoreRow
-              label={`显示更多（已显示 ${items.length}）`}
-              busy={phase === "more"}
-              onClick={() => void fetchPage(offset)}
-            />
-          )
-        }
-      >
+    <div className="@container flex flex-col gap-md p-md">
+      {/* 双列卡片网格（他 2026-10-07 选的版式）。用容器查询而不是视口断点：
+          决定一屏摆几张卡的是主区宽度，不是浏览器窗口宽度——侧栏收放、窗口分屏都该跟着变，
+          而且这样渲染探针能在固定宽度下真的数出"两列"，而不是撞运气看视口多宽。
+          排序说明从 Box 表头挪到这里，因为卡片流没有"表头"这个东西了。 */}
+      <div className="flex flex-wrap items-baseline justify-between gap-xs">
+        <h1 className="text-heading tabular-nums">{items.length} 个候选</h1>
+        <span className="text-caption text-muted-foreground">
+          通道 {channel} · 排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权
+        </span>
+      </div>
+
+      <div className="grid gap-md @lg:grid-cols-2">
         {items.map((c, i) => (
-          <RepoRow
+          <RepoCard
             key={c.id}
             card={c}
             index={i}
@@ -130,7 +125,17 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
             }}
           />
         ))}
-      </Box>
+      </div>
+
+      <div className="flex justify-center pt-2xs">
+        <Button
+          variant="outline"
+          disabled={phase === "more"}
+          onClick={() => void fetchPage(phase === "done" ? 0 : offset)}
+        >
+          {phase === "done" ? "已到底 —— 重新读取" : `显示更多（已显示 ${items.length}）`}
+        </Button>
+      </div>
     </div>
   );
 }

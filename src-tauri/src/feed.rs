@@ -1826,22 +1826,31 @@ pub fn translate(conn: &Connection, url: &str, lang: &str, texts: &[String]) -> 
     }
   }
   let mut net = 0;
+  let mut failed = 0;
   for t in &todo {
-    let got = ureq::get(url)
+    let got: Option<String> = ureq::get(url)
       .query("q", t)
       .query("langpair", &format!("en|{lang}"))
       .header("User-Agent", UA)
       .call()
       .and_then(|mut r| r.body_mut().read_json::<MM>().map_err(|e| ureq::Error::from(e)))
       .map(|v| v.rd.zh)
-      .unwrap_or_default();
+      .ok();
     net += 1;
-    let zh = if got.trim().is_empty() { t.clone() } else { got };
-    conn.execute("INSERT OR REPLACE INTO translation(key, src, zh, created_at) VALUES(?1,?2,?3,?4)",
-      params![fnv(t), t, zh, now_s()]).ok();
-    out.insert(t.clone(), serde_json::Value::String(zh));
+    match got.map(|g| g.trim().to_string()).filter(|g| !g.is_empty()) {
+      Some(zh) => {
+        conn.execute("INSERT OR REPLACE INTO translation(key, src, zh, created_at) VALUES(?1,?2,?3,?4)",
+          params![fnv(t), t, zh, now_s()]).ok();
+        out.insert(t.clone(), serde_json::Value::String(zh));
+      }
+      // 翻不动就什么都不写。原先这里把原文当译文存进缓存（`if got.is_empty() { t.clone() }`），
+      // 于是超时/限流的那一条永远不再重试，界面上一模一样的英文 —— 看着就是"翻译坏了"。
+      None => { failed += 1; }
+    }
   }
-  serde_json::json!({ "map": out, "cached": texts.len() - todo.len(), "net": net })
+  serde_json::json!({
+    "map": out, "cached": texts.len() - todo.len(), "net": net, "failed": failed
+  })
 }
 
 // ================================================================ 应用内详情（L1）
@@ -1888,8 +1897,7 @@ pub fn repo_detail(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> 
         .unwrap_or(serde_json::Value::Null);
       let download_url = meta["download_url"].as_str().unwrap_or("").to_string();
       let rpath = meta["path"].as_str().unwrap_or("README.md").to_string();
-      let raw_base = match download_url.rsplit_once('/') { Some((b,_)) => b.to_string(), None => String::new() };
-      emit(format!("[readme] path={rpath} raw_base={raw_base}"));
+      emit(format!("[readme] path={rpath}"));
       let readme0 = G!(&format!("{API}/repos/{full}/readme"))
         .header("User-Agent", UA)
         .header("Accept", "application/vnd.github.html+json")
@@ -1904,8 +1912,9 @@ pub fn repo_detail(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> 
         .unwrap_or_default();
       let readme = {
         let web_base = format!("https://github.com/{full}");
-        let (r, fixed) = rewrite_readme_urls(&readme0, if raw_base.is_empty() { web_base.as_str() } else { raw_base.as_str() }, &web_base);
-        emit(format!("[readme] 改写了 {fixed} 个相对路径"));
+        let (raw_base, link_base) = url_bases(&download_url, &web_base);
+        let (r, fixed) = rewrite_readme_urls(&readme0, &raw_base, &link_base, &web_base);
+        emit(format!("[readme] 改写了 {fixed} 个相对路径（raw_base={raw_base} link_base={link_base}）"));
         r
       };
       let mut q = BTreeMap::new();
@@ -1927,7 +1936,7 @@ pub fn repo_detail(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> 
           x["name"].as_str().unwrap_or(""),
           x["published_at"].as_str().unwrap_or("").get(..10).unwrap_or(""))).collect::<Vec<_>>().join("\n")
       }).unwrap_or_default();
-      let extra = serde_json::json!({ "releases": rel_s, "langs": names }).to_string();
+      let extra = serde_json::json!({ "releases": rel_s, "langs": names, "readme_path": rpath }).to_string();
       conn.execute("INSERT OR REPLACE INTO doc_cache(repo_id, readme, extra, fetched_at) VALUES(?1,?2,?3,?4)",
         params![id, readme, extra, ts]).ok();
       (readme, extra)
@@ -1946,7 +1955,8 @@ pub fn repo_detail(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> 
     "stars": stars, "forks": forks, "open_issues": issues, "subscribers": subs,
     "language": lang, "slope": slope, "curvature": curv, "window": win,
     "age_days": (ts - created) / 86_400, "weeks": weeks, "saved": saved,
-    "readme_html": readme, "releases": extra_v["releases"], "langs": extra_v["langs"]
+    "readme_html": readme, "readme_path": extra_v["readme_path"],
+    "releases": extra_v["releases"], "langs": extra_v["langs"]
   })
 }
 
@@ -2058,16 +2068,24 @@ pub fn repo_tree(conn: &Connection, id: i64, emit: &mut dyn FnMut(String)) -> Re
 
 /// 单个文件内容：走官方 raw 媒体类型，省掉 base64 解码这一步。
 /// 超过 200KB 只给前 200KB 并说明；含 NUL 字节就当二进制不预览。
-pub fn repo_file_read(conn: &Connection, id: i64, path: &str, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
+/// 读仓库里某个文件。mode="html" 时让 GitHub 自己渲染 markdown —— 我们不再引一个前端 markdown 库，
+/// 渲染口径也跟 README / issue 正文保持一致（实测 contents 端点带 html+json 媒体类型返回 200，
+/// 外面包一层 `<div id="file" class="md" data-path="...">`）。
+/// 缓存键里带 mode：同一份文件的正文和渲染结果是两行，切换"渲染 / 源码"不会互相顶掉。
+pub fn repo_file_read(conn: &Connection, id: i64, path: &str, mode: &str, emit: &mut dyn FnMut(String)) -> Result<serde_json::Value, String> {
   let full = repo_full(conn, id).ok_or("库里没有这个项目")?;
   const MAX: usize = 200_000;
-  if let Some(c) = cache_get(conn, id, path, "file", 6 * 3_600) {
+  let want_html = mode == "html";
+  let kind = if want_html { "file-html" } else { "file" };
+  if let Some(c) = cache_get(conn, id, path, kind, 6 * 3_600) {
+    emit(format!("[file] {path} 命中 6 小时缓存（{}），未联网", if want_html { "渲染版" } else { "源码" }));
     return Ok(serde_json::from_str(&c).map_err(|e| e.to_string())?);
   }
   let url = format!("{API}/repos/{full}/contents/{}", path_encode(path));
+  let accept = if want_html { ACCEPT_HTML } else { "application/vnd.github.raw" };
   let body = G!(&url)
     .header("User-Agent", UA)
-    .header("Accept", "application/vnd.github.raw")
+    .header("Accept", accept)
     .call()
     .and_then(|r| {
       use std::io::Read;
@@ -2079,15 +2097,31 @@ pub fn repo_file_read(conn: &Connection, id: i64, path: &str, emit: &mut dyn FnM
     .map_err(|e| format!("读不到 {path}：{e}"))?;
   let binary = body.contains(&0u8);
   let text = String::from_utf8_lossy(&body).to_string();
-  let out = serde_json::json!({
-    "path": path,
-    "bytes": body.len(),
-    "truncated": body.len() > MAX,
-    "binary": binary,
-    "text": if binary { String::new() } else { text.chars().take(MAX).collect::<String>() },
-  });
-  cache_put(conn, id, path, "file", &out.to_string());
-  emit(format!("[file] {path} {}B{}", body.len(), if binary { "（二进制，不预览）" } else { "" }));
+  let out = if want_html {
+    // 渲染出来的 HTML 里同样有相对路径（图片、指向别的 md 的链接），口径跟 README 一致地补全
+    let web_base = format!("https://github.com/{full}");
+    let dir = path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let refname = default_branch(conn, id, &full, emit);
+    let suffix = if dir.is_empty() { String::new() } else { format!("/{dir}") };
+    let raw_base = format!("https://raw.githubusercontent.com/{full}/{refname}{suffix}");
+    let link_base = format!("{web_base}/blob/{refname}{suffix}");
+    let (html, fixed) = rewrite_readme_urls(text.trim_start_matches('\u{feff}'), &raw_base, &link_base, &web_base);
+    emit(format!("[file] {path} 渲染版 {}B，改写 {fixed} 个相对路径", body.len()));
+    serde_json::json!({
+      "path": path, "bytes": body.len(), "truncated": false, "binary": false,
+      "html": html, "base_path": dir,
+    })
+  } else {
+    emit(format!("[file] {path} {}B{}", body.len(), if binary { "（二进制，不预览）" } else { "" }));
+    serde_json::json!({
+      "path": path,
+      "bytes": body.len(),
+      "truncated": body.len() > MAX,
+      "binary": binary,
+      "text": if binary { String::new() } else { text.chars().take(MAX).collect::<String>() },
+    })
+  };
+  cache_put(conn, id, path, kind, &out.to_string());
   Ok(out)
 }
 
@@ -2501,40 +2535,103 @@ pub fn proxy_now() -> String { proxy_setting() }
 // GitHub 网页会把 README 里的相对图片路径改写成仓库地址，但 API 的 html 渲染**不改写**。
 // 不处理的后果很阴：src="docs/x.png" 会被解析成 http://tauri.localhost/docs/x.png，
 // 而 Tauri 的资源服务器对未知路径返回 200 + index.html —— 图片既不报错也永远出不来。
-pub fn rewrite_readme_urls(html: &str, raw_base: &str, web_base: &str) -> (String, usize) {
+/// 把第三方 HTML 里的相对路径补成绝对地址：图片用 raw，链接用 blob 页。
+///
+/// ⚠️ 这里曾经踩过一次（2026-10-07 他点 README 里的"简体中文"没反应）：扫描顺序写成了
+/// "先找 src= 再找 href="，只要文档后面还剩一个 src=，它前面的所有链接就被整段原样抄过去、
+/// 根本没改写，相对链接于是落到 open_url 那里被"只允许 github.com"挡掉。
+/// 现在按**位置**取最先出现的那个属性，跟类型无关。
+pub fn rewrite_readme_urls(html: &str, raw_base: &str, link_base: &str, web_base: &str) -> (String, usize) {
   let mut n = 0usize;
   let mut out = String::with_capacity(html.len());
-  let bytes = html.as_bytes();
   let mut i = 0usize;
-  while i < bytes.len() {
-    // 找下一个 src=" 或 href=" 或 srcset="
+  loop {
     let rest = &html[i..];
-    let (attr, is_link, is_set) = if let Some(p) = rest.find("src=\"") { (p, false, false) }
-      else if let Some(p) = rest.find("href=\"") { (p, true, false) }
-      else if let Some(p) = rest.find("srcset=\"") { (p, false, true) }
-      else { out.push_str(rest); break; };
-    let head_end = i + attr + if is_set { 7 } else { 5 };
-    out.push_str(&html[i..head_end]);
-    let close = match html[head_end..].find('"') { Some(p) => head_end + p, None => { out.push_str(&html[head_end..]); break; } };
-    let val = &html[head_end..close];
-    let new = if val.is_empty() || val.starts_with('#') || val.starts_with("data:")
-      || val.starts_with("http://") || val.starts_with("https://") || val.starts_with("//") || val.starts_with("mailto:") {
-      val.to_string()
-    } else {
-      n += 1;
-      let clean = val.trim_start_matches("./");
-      let (base, path) = if clean.starts_with('/') {
-        (web_base.trim_end_matches("/tree").to_string(), clean.to_string())   // 根相对：给仓库页域名
-      } else {
-        (raw_base.to_string(), format!("/{}", clean))
-      };
-      format!("{}{}", base.trim_end_matches('/'), path)
+    let src = rest.find("src=\"");
+    let href = rest.find("href=\"");
+    let srcset = rest.find("srcset=\"");
+    let cand = [
+      src.map(|p| (p, "src=\"", false, false)),
+      href.map(|p| (p, "href=\"", true, false)),
+      srcset.map(|p| (p, "srcset=\"", false, true)),
+    ]
+    .into_iter()
+    .flatten()
+    .min_by_key(|(p, _, _, _)| *p);
+    let (attr, len, is_link, is_set) = match cand {
+      Some((p, name, l, s)) => (i + p, name.len(), l, s),
+      None => {
+        out.push_str(rest);
+        break;
+      }
     };
+    out.push_str(&html[i..attr + len]);
+    let close = match html[attr + len..].find('"') {
+      Some(p) => attr + len + p,
+      None => {
+        out.push_str(&html[attr + len..]);
+        break;
+      }
+    };
+    let val = &html[attr + len..close];
+    // 单个 URL → 绝对地址；已经是绝对地址 / 锚点 / data: 的原样过。返回 (值, 是否改写了)
+    let one = |v: &str| -> (String, bool) {
+      if v.is_empty() || v.starts_with('#') || v.starts_with("data:")
+        || v.starts_with("http://") || v.starts_with("https://") || v.starts_with("//") || v.starts_with("mailto:")
+      {
+        return (v.to_string(), false);
+      }
+      let clean = v.trim_start_matches("./");
+      let (base, path) = if clean.starts_with('/') {
+        (web_base.trim_end_matches("/tree").to_string(), clean.to_string()) // 根相对：给仓库页域名
+      } else {
+        (if is_link { link_base } else { raw_base }.to_string(), format!("/{}", clean))
+      };
+      (format!("{}{}", base.trim_end_matches('/'), path), true)
+    };
+    // srcset 是"url 描述符, url 描述符"的列表，整串前面接基址会把每张图拼死，所以逐项处理
+    let (new, cnt) = if is_set {
+      let mut parts: Vec<String> = Vec::new();
+      let mut c = 0usize;
+      for seg in val.split(',') {
+        let seg = seg.trim_start();
+        let (u, rest_desc) = match seg.split_once(' ') {
+          Some((a, b)) => (a, format!(" {b}")),
+          None => (seg, String::new()),
+        };
+        let (nu, hit) = one(u);
+        c += hit as usize;
+        parts.push(format!("{nu}{rest_desc}"));
+      }
+      (parts.join(", "), c)
+    } else {
+      let (u, hit) = one(val);
+      (u, hit as usize)
+    };
+    n += cnt;
     out.push_str(&new);
     out.push('"');
     i = close + 1;
   }
   (out, n)
+}
+
+/// download_url 形如 https://raw.githubusercontent.com/{o}/{r}/{ref}/{path}，
+/// 从这里同时推出"图片基址（raw）"和"链接基址（github.com 的 blob 页）"，
+/// 链接给 blob 页而不是 raw：raw 打开是纯文本，前端拦到它还能换回 blob 路径在应用里预览。
+pub fn url_bases(download_url: &str, web_base: &str) -> (String, String) {
+  let raw = download_url.rsplit_once('/').map(|(b, _)| b.to_string()).unwrap_or_default();
+  let rest = download_url
+    .trim_start_matches("https://raw.githubusercontent.com/")
+    .trim_start_matches("http://raw.githubusercontent.com/");
+  let segs: Vec<&str> = rest.split('/').collect();
+  if segs.len() < 3 || raw.is_empty() {
+    return (String::new(), format!("{web_base}/blob/HEAD"));
+  }
+  let dirs = &segs[3..];
+  let dir = if dirs.len() > 1 { dirs[..dirs.len() - 1].join("/") } else { String::new() };
+  let link = format!("{web_base}/blob/{}/{}", segs[2], dir);
+  (raw, link)
 }
 
 // ================================================================ 多账号与设备码登录

@@ -34,38 +34,48 @@ const actions = existsSync(join(web, "src", "views", "ActionsPanel.tsx"))
 const mdlib = existsSync(join(web, "src", "lib", "md.ts")) ? readFileSync(join(web, "src", "lib", "md.ts"), "utf8") : "";
 const treex = existsSync(join(web, "src", "components", "RepoTree.tsx"))
   ? readFileSync(join(web, "src", "components", "RepoTree.tsx"), "utf8") : "";
+const richx = existsSync(join(web, "src", "components", "RichHtml.tsx"))
+  ? readFileSync(join(web, "src", "components", "RichHtml.tsx"), "utf8") : "";
+const collectrs = existsSync(join(web, "..", "src-tauri", "src", "bin", "collect.rs"))
+  ? readFileSync(join(web, "..", "src-tauri", "src", "bin", "collect.rs"), "utf8") : "";
+const cardx = readFileSync(join(web, "src", "components", "RepoCard.tsx"), "utf8");
+const feedview = readFileSync(join(web, "src", "views", "FeedView.tsx"), "utf8");
+const probeSrc = readFileSync(join(web, "src", "probe-repo.tsx"), "utf8");
 
 // 逐页：必须还在的信息块（钉可见文字，不钉实现细节）+ 不许回来的摆法
 const PAGES = [
   {
     file: "src/views/FeedView.tsx",
     name: "发现",
-    need: ["显示更多", "热度榜是空的", "重新读取"],
-    ban: [/sm:grid-cols-2/, /columns:/],
+    need: ["显示更多", "热度榜是空的", "重新读取", "双列卡片网格"],
+    // 2026-10-07 他把发现页改成双列卡片，这条 ban（sm:grid-cols-2）到此作废；
+    // 但 CSS columns 那种真瀑布流仍然不许——它会把条目顺序与曝光 slot 的口径冲掉。
+    ban: [/columns:/],
   },
   {
     file: "src/components/RepoCard.tsx",
-    name: "发现页的条目行",
-    need: ["收藏", "不感兴趣", "浏览器打开", "clone", "出生"],
+    name: "发现页的卡片",
+    need: ["收藏", "不感兴趣", "浏览器打开", "clone", "出生", "opengraph.githubassets.com", "这张预览图没取到"],
     ban: [/hero/],
   },
   {
     file: "src/views/DetailView.tsx",
     name: "详情",
-    need: ["README", "语言构成", "最近 release", "应用内浏览 GitHub", "dwell", "star 增长", "概览", "Issues", "Pull requests"],
-    ban: [/lg:grid-cols-12/],
+    need: ["README", "语言构成", "最近 release", "应用内浏览 GitHub", "dwell", "star 增长", "概览", "Issues", "Pull requests", "RichHtml"],
+    // README 的 HTML 不许再就地 setInnerHTML：那正是"点了没反应"的出处，必须过 RichHtml
+    ban: [/lg:grid-cols-12/, /dangerouslySetInnerHTML/],
   },
   {
     file: "src/components/RepoTree.tsx",
     name: "仓库文件树与预览",
-    need: ["二进制文件，不做预览", "已截断", "在 GitHub 打开"],
+    need: ["二进制文件，不做预览", "已截断", "在 GitHub 打开", "看源码", "看渲染", "RichHtml"],
     ban: [/dangerouslySetInnerHTML/],
   },
   {
     file: "src/views/ItemDetail.tsx",
     name: "应用内的 issue / PR 详情",
-    need: ["返回列表", "描述", "评论", "变更", "在浏览器打开", "应用内浏览"],
-    ban: [],
+    need: ["返回列表", "描述", "评论", "变更", "在浏览器打开", "应用内浏览", "RichHtml"],
+    ban: [/dangerouslySetInnerHTML/],
   },
   {
     file: "src/views/SettingsView.tsx",
@@ -187,9 +197,9 @@ const CHECKS = [
   },
   {
     id: "md-shared",
-    what: "README 与 issue/PR 正文共用同一个清洗函数（只在一条路径上补清洗迟早会漏）",
+    what: "第三方 HTML 只有一个出口：清洗函数在 lib/md.ts，只有 RichHtml 调它，README / 文件渲染版 / issue 正文 / 评论都用 RichHtml",
     pass: mdlib.length > 0 && /export function sanitizeHtml/.test(mdlib) &&
-      /sanitizeHtml\(d\.readme_html\)/.test(detail) && /sanitizeHtml\(body\)/.test(item),
+      /sanitizeHtml\(html\)/.test(richx) && /<RichHtml/.test(detail) && /<RichHtml/.test(item) && /<RichHtml/.test(treex),
   },
   {
     id: "html-media",
@@ -198,11 +208,12 @@ const CHECKS = [
   },
   {
     id: "item-sanitized",
-    what: "应用内详情里每一处 dangerouslySetInnerHTML 都套了清洗（三处正文：描述、评论、PR 描述）",
+    what: "dangerouslySetInnerHTML 全仓只出现在 RichHtml 一处，散装正文（描述/评论）都收拢到它",
     pass: (() => {
-      const n = (item.match(/dangerouslySetInnerHTML/g) || []).length;
-      const s = (item.match(/sanitizeHtml\(/g) || []).length;
-      return n > 0 && s >= n;
+      const inRich = (richx.match(/dangerouslySetInnerHTML/g) || []).length;
+      const elsewhere = [detail, item, treex, actions].reduce((a, s) => a + (s.match(/dangerouslySetInnerHTML/g) || []).length, 0);
+      const n = (item.match(/<RichHtml/g) || []).length;
+      return inRich === 1 && elsewhere === 0 && n >= 2;
     })(),
   },
   {
@@ -288,6 +299,110 @@ const CHECKS = [
     pass: /refillStatus/.test(statview) && /现在补一轮/.test(statview) && /静默补货/.test(statview) &&
       /refill_on/.test(settings) && /后台静默补货/.test(settings),
   },
+  // ---- 2026-10-07 他点的三条：README 点「简体中文」没反应 / 点 md 不渲染 / 代码块没标注
+  {
+    id: "href-rewrite-order",
+    what: "feed.rs:2536 改写器按**位置**取最先出现的属性（min_by_key），不是按 src/href 类型抢先；旧的 if-else 链不许回来",
+    pass: /\.min_by_key\(\|\(p, _, _, _\)\| \*p\)/.test(rust) &&
+      !/if let Some\(p\) = rest\.find\("src=\\"\"\)/.test(rust) &&
+      /link_base/.test(rust),
+  },
+  {
+    id: "link-blob-base",
+    what: "feed.rs:2611 url_bases 把链接基址定成 github.com 的 blob 页（图片仍走 raw），README 调用点传了 link_base",
+    pass: /pub fn url_bases/.test(rust) && /\/blob\/{}\/\{\}/.test(rust) &&
+      /rewrite_readme_urls\(&readme0, &raw_base, &link_base, &web_base\)/.test(rust),
+  },
+  {
+    id: "md-official-render",
+    what: "feed.rs:2066 repo_file_read 有 mode=html 这一档：走 html+json 媒体类型，且缓存按 mode 分行（file-html）",
+    pass: /mode == "html"/.test(rust) && /ACCEPT_HTML \} else \{ "application\/vnd\.github\.raw"/.test(rust) &&
+      /"file-html"/.test(rust),
+  },
+  {
+    id: "ipc-mode-param",
+    what: "mode 一路贯通：main.rs:235 command 收 Option<String>、bridge:247 repoFile 收 mode、collect.rs:242 file 收第 4 个参数",
+    pass: /fn repo_file_read\(repo_id: i64, path: String, mode: Option<String>\)/.test(mainrs) &&
+      /repoFile\(id: number, path: string, mode: "raw" \| "html" = "raw"\)/.test(bridge) &&
+      /args\.get\(4\)\.map\(\|s\| s\.as_str\(\)\)\.unwrap_or\("raw"\)/.test(collectrs),
+  },
+  {
+    id: "readme-path-plumb",
+    what: "相对链接要按 README 所在目录解，所以 readme_path 得从 Rust 一路传到前端：feed.rs:1949 / bridge.ts:47 / DetailView 的 basePath",
+    pass: /"readme_path": extra_v\["readme_path"\]/.test(rust) && /readme_path\?: string/.test(bridge) &&
+      /basePath=\{\(d\.readme_path \?\? ""\)/.test(detail),
+  },
+  {
+    id: "rich-single-exit",
+    what: "第三方 HTML 的点击只有 RichHtml 一个出口：README、文件渲染版、issue 正文、评论都用它，没有第二处 openExternal(href)",
+    pass: /openInside\(href, repoId\)/.test(richx) && /<RichHtml/.test(detail) && /<RichHtml/.test(item) &&
+      /<RichHtml/.test(treex) && !/openExternal\(a\.getAttribute\("href"\)/.test(detail) &&
+      !/openExternal\(a\.getAttribute\("href"\)/.test(item),
+  },
+  {
+    id: "anchor-id-fix",
+    what: "GitHub 渲染出来的 h1~h6 不带 id（实测 h2 只有 class=heading-element），所以锚点要自己补 slug，否则 README 目录天生点不动",
+    pass: /if \(!h\.id\) h\.id = slug\(/.test(richx) && /export function slug\(/.test(richx) &&
+      /user-content-/.test(richx),
+  },
+  {
+    id: "md-default-render",
+    what: "RepoTree.tsx:143 点 md 默认给渲染版（isMd 判定为 render），并且能一键切回源码",
+    pass: /isMd\(p\) \? "render" : "source"/.test(treex) && /看源码/.test(treex) && /看渲染/.test(treex),
+  },
+  {
+    id: "code-label-css",
+    what: "产物 CSS 里代码块有等宽字体与语言标注条（.codehead），不再是一块无标注的等宽文字",
+    pass: /\.codehead/.test(css) && /\.codebox/.test(css) && /font-family:var\(--font-mono\)/.test(css),
+  },
+  {
+    id: "api-dump-char-safe",
+    what: "collect.rs:161 探针按**字符**取前 200（原来按字节切会在中文中间劈开直接 panic），并能把完整响应落盘",
+    pass: /body\.chars\(\)\.take\(200\)/.test(collectrs) && !/&body\[\.\.body\.len\(\)\.min\(200\)\]/.test(collectrs) &&
+      /std::fs::write\(dump, &body\)/.test(collectrs),
+  },
+  // ---- 2026-10-07 他补的两条：整行该可点 / 翻译只发一批就停
+  {
+    id: "row-click-opens",
+    what: "RepoCard.tsx 整张卡 onClick → onOpen，且卡内的按钮/链接用 closest() 排除掉（否则点收藏会把详情页也打开）",
+    pass: /const cardClick = /.test(cardx) && /onClick=\{cardClick\}/.test(cardx) &&
+      /closest\("button,a,/.test(cardx),
+  },
+  {
+    id: "feed-card-grid",
+    what: "发现页是按容器宽度出列的双列卡片网格（@container + @lg:grid-cols-2）+ GitHub OG 头图，图懒加载且取不到有降级",
+    pass: /@container/.test(feedview) && /@lg:grid-cols-2/.test(feedview) && !/columns:/.test(feedview) &&
+      /opengraph\.githubassets\.com/.test(cardx) && /loading="lazy"/.test(cardx) &&
+      /onError=\{\(\) => setState\("bad"\)\}/.test(cardx),
+  },
+  {
+    id: "og-cover-look",
+    what: "卡图对齐顶部（居中裁会把 OG 图里的头像切一半）、在路上时右下角挂加载标志、取不到换成 octicon 的 GitHub 标",
+    pass: /object-top/.test(cardx) && /data-og-load/.test(cardx) && /animate-spin/.test(cardx) &&
+      /M6\.766 11\.328/.test(cardx) && /aria-label="GitHub"/.test(cardx),
+  },
+  {
+    id: "translate-continues",
+    what: "store.tsx 的翻译队列发完一批会 rearm 接着发（一屏 92 条简介，单次上限 8 条，不续跑等于只翻 8 条）",
+    pass: /const rearm = \(\) =>/.test(store) && /rearm\(\);/.test(store) && /trTimer = window\.setTimeout\(flushTranslate, 900\)/.test(store),
+  },
+  {
+    id: "translate-no-poison",
+    what: "feed.rs:1843 翻译失败不写缓存（旧写法把原文当译文存进去，那条就永远不会再试，界面看着就是坏了）",
+    pass: /None => \{ failed \+= 1; \}/.test(rust) && !/if got\.trim\(\)\.is_empty\(\) \{ t\.clone\(\) \}/.test(rust),
+  },
+  {
+    id: "translate-cli",
+    what: "collect.exe translate 能单独验翻译（RAW 里带 failed 与库里 zh=原文 的行数，红绿都有据可查）",
+    pass: /Some\("translate"\)/.test(collectrs) && /FROM translation WHERE zh = src/.test(collectrs),
+  },
+  {
+    id: "probe-covers-two",
+    what: "DOM 探针真的点了卡片、真的等到第二批翻译（12 条 = 8+4），还真的数了列数与 OG 图",
+    pass: /点整张卡（简介那一块）就进详情/.test(probeSrc) && /8\+4/.test(probeSrc) &&
+      /双列\*\*卡片/.test(probeSrc) && /opengraph\.githubassets\.com/.test(probeSrc) &&
+      /data-og-load/.test(probeSrc) && /objectPosition/.test(probeSrc),
+  },
 ];
 
 let pass = 0;
@@ -336,6 +451,18 @@ if (liveArg) {
       const list = run(["repos", "400"]);
       id = Number((list.match(/id=(\d+)\s+react\/react\b/) || list.match(/id=(\d+)/) || [])[1]);
     }
+    // ---- 离线单元：相对路径改写器。这条不打网络，钉的是"链接排在下一个 src= 之前就没被改写"那个回归
+    const rw = raw(["rewrite"]);
+    const rwHtml = rw.v?.html ?? "";
+    LIVE.push([
+      `改写器按位置处理属性：链接补成 blob 页（改了 ${rw.v?.fixed ?? 0} 个），锚点没动，已是绝对地址的也没动`,
+      rwHtml.includes('href="https://github.com/o/r/blob/main/README.zh-CN.md"') &&
+        rwHtml.includes('href="https://github.com/o/r/blob/main/docs/a.md"') &&
+        rwHtml.includes('src="https://raw.githubusercontent.com/o/r/main/public/logo.png"') &&
+        rwHtml.includes('href="#用法"') &&
+        rwHtml.includes('src="https://example.com/x.png"') &&
+        rw.v?.fixed === 3,
+    ]);
     try {
       const t = raw(["tree", String(id)]);
       LIVE.push(["tree 拿得到条目", !!t.v && t.v.count > 0 && t.v.entries.every((e) => typeof e.path === "string" && typeof e.dir === "boolean") && !!t.v.branch]);
@@ -343,8 +470,20 @@ if (liveArg) {
       const f = raw(["file", String(id), f0.path]);
       LIVE.push(["file 读得出内容（文本有字节，二进制就明说不预览）",
         !!f.v && f.v.bytes > 0 && (f.v.binary ? f.v.text === "" : f.v.text.length > 0)]);
-      const i = raw(["list", String(id), "issue"]);
-      const p = raw(["list", String(id), "pull"]);
+      // ---- 他点的第二条：点 md 只给一堆源码。mode=html 让 GitHub 自己渲染
+      // （实测 contents 端点带 html+json 媒体类型返回 200，外面包一层 div#file.md）
+      const mdPath = (t.v.entries.find((e) => !e.dir && /\.(md|markdown)$/i.test(e.path)) || f0).path;
+      const hv = raw(["file", String(id), mdPath, "html"]);
+      LIVE.push([`md 的渲染版拿得到（${(hv.v?.html ?? "").length} 字符 HTML，且不带源码正文）`,
+        !!hv.v && /<h\d|<article|<p[\s>]/.test(hv.v.html ?? "") && !hv.v.text]);
+      const relHref = (hv.v?.html ?? "").match(/href="(?!#|https?:|mailto:|data:)[^"]*"/g) ?? [];
+      LIVE.push([
+        `渲染版里没有相对链接残留${relHref.length ? "（还留着 " + relHref.slice(0, 3).join(",") + "）" : ""}`,
+        relHref.length === 0,
+      ]);
+      const hv2 = run(["file", String(id), mdPath, "html"]);
+      LIVE.push(["第二次读同一份渲染版命中缓存，没再打 API", hv2.includes("命中 6 小时缓存")]);
+      const i = raw(["list", String(id), "issue"]);      const p = raw(["list", String(id), "pull"]);
       const inum = new Set((i.v?.items ?? []).map((x) => x.number));
       const pnum = new Set((p.v?.items ?? []).map((x) => x.number));
       const mixed = [...inum].filter((x) => pnum.has(x));
@@ -392,6 +531,22 @@ if (liveArg) {
       const mm = soc.match(/入库 (\d+) 条/);
       LIVE.push([`相似用户通道跑得动（${mm ? mm[1] : "?"} 条入库，源以「我关注的人」为主）`,
         /我关注 \d+（主）/.test(soc) && !!mm && Number(mm[1]) > 0]);
+      // ---- 翻译：真打一次外部服务，并把"翻不动就别把原文当译文存进缓存"钉住
+      const uniq = "Probe sentence about a tiny disk cleaner " + Date.now();
+      const tr1 = raw(["translate", uniq]);
+      const zh1 = String(Object.values(tr1.v?.result.map ?? {})[0] ?? "");
+      LIVE.push([
+        `翻译真出中文（${zh1.slice(0, 24)}），这次联网 ${tr1.v?.result.net} 条`,
+        !!tr1.v && tr1.v.result.net === 1 && /[\u4e00-\u9fff]/.test(zh1) && zh1 !== uniq,
+      ]);
+      const tr2 = raw(["translate", uniq]);
+      LIVE.push([`同一句第二次命中本地缓存、不再联网（net=${tr2.v?.result.net} cached=${tr2.v?.result.cached}）`,
+        !!tr2.v && tr2.v.result.net === 0 && tr2.v.result.cached === 1]);
+      const trBad = raw(["translate", "--url=http://127.0.0.1:9/x", "Another probe sentence " + Date.now()]);
+      LIVE.push([
+        `打不通时失败 ${trBad.v?.result.failed} 条、库里 zh=原文 的行数没涨（还是 ${trBad.v?.poisoned} 行）`,
+        !!trBad.v && trBad.v.result.failed === 1 && trBad.v.poisoned === tr1.v.poisoned,
+      ]);
     } catch (e) {
       LIVE.push(["live 跑通了（上面若有 FAIL 是这条没执行）", false]);
       console.log("  live 异常：" + String(e).slice(0, 200));

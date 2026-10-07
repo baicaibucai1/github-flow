@@ -232,10 +232,10 @@ fn repo_tree(repo_id: i64) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn repo_file_read(repo_id: i64, path: String) -> Result<serde_json::Value, String> {
+fn repo_file_read(repo_id: i64, path: String, mode: Option<String>) -> Result<serde_json::Value, String> {
   let c = feed::open_db()?;
   let mut sink = |s: String| { let _ = js_log(s); };
-  feed::repo_file_read(&c, repo_id, &path, &mut sink)
+  feed::repo_file_read(&c, repo_id, &path, mode.as_deref().unwrap_or("raw"), &mut sink)
 }
 
 #[tauri::command]
@@ -290,9 +290,9 @@ fn build_menu(app: &tauri::App) -> tauri::Result<()> {
 
   let about = PredefinedMenuItem::about(
     handle,
-    Some("关于 Github Flow"),
+    Some("关于 GitHub Flow"),
     Some(AboutMetadata {
-      name: Some("Github Flow".into()),
+      name: Some("GitHub Flow".into()),
       version: Some("0.1.0".into()),
       copyright: Some("本地优先：行为日志只留这台机器，没有任何一条上传".into()),
       ..Default::default()

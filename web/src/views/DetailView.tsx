@@ -19,7 +19,7 @@ import { Box, BoxEmpty, BoxRow, LangDot, UnderlineNav } from "../components/gh";
 import { FilePreview, RepoTreeBox, useRepoFiles } from "../components/RepoTree";
 import { ItemDetail } from "./ItemDetail";
 import { ActionsPanel } from "./ActionsPanel";
-import { sanitizeHtml } from "../lib/md";
+import { RichHtml } from "../components/RichHtml";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@soda/ui";
 
 const chartConfig = { stars: { label: "这一周新增 star", color: "var(--primary)" } };
@@ -280,26 +280,25 @@ export function DetailView({ repoId, onBack, onNotice }: DetailViewProps) {
       {tab === "overview" ? (
       <div className="grid items-start gap-md lg:grid-cols-[minmax(0,1fr)_320px]">
         {f.sel ? (
-          <FilePreview f={f} fullName={d.full_name ?? ""} onNotice={onNotice} />
+          <FilePreview f={f} fullName={d.full_name ?? ""} repoId={repoId} onNotice={onNotice} />
         ) : (
         <Box
           title="README"
           aside={<span>{String(d.readme_html || "").length} 字节 · 官方 API 渲染的 HTML</span>}
         >
-          <div
-            ref={rdRef}
-            className="md px-md py-md"
-            onClick={(e) => {
-              // README 里的链接是第三方 HTML，target=_blank 在 Tauri 里会被吞掉
-              const a = (e.target as HTMLElement).closest?.("a");
-              if (!a) return;
-              e.preventDefault();
-              openExternal(a.getAttribute("href") ?? "").catch((err) => onNotice("没打开这个链接：" + String(err)));
-            }}
-            dangerouslySetInnerHTML={{
-              __html: d.readme_html ? sanitizeHtml(d.readme_html) : "<i>取不到 README</i>",
-            }}
-          />
+          {/* 链接、锚点、代码块标注都由 RichHtml 统一处理：README 的 HTML 是第三方的，
+              相对链接（href="README.zh-CN.md"）以前直接丢给 open_url，被"只允许 github.com"挡掉，
+              点了就是没反应 —— 他 2026-10-07 第一条投诉。 */}
+          <div ref={rdRef}>
+            <RichHtml
+              html={d.readme_html ?? ""}
+              fullName={d.full_name ?? ""}
+              repoId={repoId}
+              basePath={(d.readme_path ?? "").split("/").slice(0, -1).join("/")}
+              onPick={(p) => f.pick(p)}
+              onNotice={onNotice}
+            />
+          </div>
         </Box>
         )}
 

@@ -262,6 +262,36 @@ body,
   border-radius: var(--radius-md);
   padding: var(--space-xs) var(--space-sm);
   overflow: auto;
+  /* 之前没写这一行，代码块用的是界面正文字体 —— 他说的"代码块没有标注"里有一半是这个：
+     等宽是代码块最基本的标注，没有它，缩进对齐全塌。 */
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+/* 代码块外面这一条：语言名写在头栏里（highlight-source-shell / pre[lang] 都能取到），
+   取不到语言的裸围栏写"代码"，总之不让人对着一块等宽文字猜语言。 */
+.md .codebox {
+  margin: var(--space-2xs) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  overflow: hidden;
+}
+.md .codehead {
+  padding: 3px var(--space-sm);
+  background: var(--secondary);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+}
+.md .codebox pre,
+.md .codebox div.highlight,
+.md .codebox div.snippet-clipboard-content {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 .md pre code {
   background: none;

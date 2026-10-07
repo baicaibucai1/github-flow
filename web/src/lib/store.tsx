@@ -229,16 +229,29 @@ function flushTranslate() {
   const todo = [...queue].filter((t) => t.length > 3).slice(0, TR_BATCH);
   for (const t of todo) queue.delete(t);
   if (!todo.length) return;
+  // 队列没排空就接着排下一批。这一句是"翻译看起来没工作"的根因：一屏 100 条里有 92 条带简介，
+  // 而单次只发 8 条（MyMemory 匿名额度按字符算），发完这批就不再排程；
+  // requestTranslate 又因为 queue.has(t) 认定"这条已经在翻了"而不重新定时 ——
+  // 实测当屏 92 条简介、库里 0 条译文，只有点开过详情页的那几条被翻了。
+  const rearm = () => {
+    if (!queue.size) return;
+    window.clearTimeout(trTimer);
+    trTimer = window.setTimeout(flushTranslate, 900);
+  };
   void call<{ map: Record<string, string>; net: number; cached: number }>("do_translate", {
     texts: todo,
   })
     .then((r) => {
-      log(`translate net=${r.net} cached=${r.cached}`);
+      log(`translate net=${r.net} cached=${r.cached} 队列还剩=${queue.size}`);
       const next = new Map(snap.translated);
       for (const [k, v] of Object.entries(r.map)) if (v && v !== k) next.set(k, v);
       assign({ translated: next });
+      rearm();
     })
-    .catch((e) => log("translate FAIL " + e));
+    .catch((e) => {
+      log("translate FAIL " + e);
+      rearm();
+    });
 }
 
 export function requestTranslate(texts: string[]) {

@@ -5,6 +5,7 @@
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { DetailView } from "./views/DetailView";
+import { FeedView } from "./views/FeedView";
 import { StatsView } from "./views/StatsView";
 import { initStore } from "./lib/store";
 
@@ -25,10 +26,34 @@ const TREE = {
   ],
 };
 
-const FILES: Record<string, unknown> = {
-  "src/main.rs": { path: "src/main.rs", bytes: 44, truncated: false, binary: false, text: 'fn main() {\n  println!("探针");\n}\n' },
-  "README.md": { path: "README.md", bytes: 120, truncated: false, binary: false, text: "# 探针仓库\n第二行\n第三行" },
-  "docs/img/logo.png": { path: "docs/img/logo.png", bytes: 3000, truncated: false, binary: true, text: "" },
+// README 的 HTML 形状照 GitHub html+json 的实测输出：标题**没有 id**、代码块是
+// div.highlight.highlight-source-shell、相对链接已被 Rust 补成 blob 页（这里再留一个
+// 没补的 docs/guide.md，模拟 7 天缓存里的老数据，前端一样要在应用内接住）。
+const README_HTML =
+  "<h1 class=\"heading-element\" dir=\"auto\">探针 MangoDisk</h1>" +
+  "<p><a href=\"https://github.com/probe/repo/blob/main/README.zh-CN.md\">简体中文</a> " +
+  "<a href=\"docs/guide.md\">指南</a> <a href=\"#功能\">功能</a> " +
+  "<a href=\"https://probe.example.com/home\">主页</a></p>" +
+  "<h2 class=\"heading-element\" dir=\"auto\">功能</h2><p>这一节讲功能。</p>" +
+  "<div class=\"highlight highlight-source-shell notranslate position-relative overflow-auto\" dir=\"auto\"><pre>brew install mangodisk</pre></div>" +
+  "<div class=\"snippet-clipboard-content notranslate position-relative overflow-auto\"><pre class=\"notranslate\"><code>裸围栏没有语言</code></pre></div>";
+
+const FILES: Record<string, { raw?: unknown; html?: string }> = {
+  "src/main.rs": { raw: { path: "src/main.rs", bytes: 44, truncated: false, binary: false, text: 'fn main() {\n  println!("探针");\n}\n' } },
+  "README.md": {
+    raw: { path: "README.md", bytes: 120, truncated: false, binary: false, text: "# 探针仓库\n第二行源码\n第三行源码" },
+    html: "<h1 class=\"heading-element\">探针仓库渲染版</h1><p>渲染后的第一段</p>" +
+      "<div class=\"highlight highlight-source-python notranslate\"><pre>print(1)</pre></div>",
+  },
+  "README.zh-CN.md": {
+    raw: { path: "README.zh-CN.md", bytes: 130, truncated: false, binary: false, text: "# 简体中文源码" },
+    html: "<h1 class=\"heading-element\">简体中文</h1><p>这是渲染出来的中文正文</p>",
+  },
+  "docs/guide.md": {
+    raw: { path: "docs/guide.md", bytes: 90, truncated: false, binary: false, text: "# 指南源码" },
+    html: "<h1 class=\"heading-element\">指南</h1><p>指南的渲染正文</p>",
+  },
+  "docs/img/logo.png": { raw: { path: "docs/img/logo.png", bytes: 3000, truncated: false, binary: true, text: "" } },
 };
 
 const DETAIL = {
@@ -46,7 +71,8 @@ const DETAIL = {
   weeks: [1, 2, 3],
   langs: ["Rust 90.0%"],
   releases: "v1.0|首个版本|2026-01-01",
-  readme_html: "<p>探针 README</p>",
+  readme_html: README_HTML,
+  readme_path: "README.md",
   saved: false,
 };
 
@@ -130,24 +156,66 @@ const RUNS = {
   ],
 };
 
+// 发现页一屏给 12 条：超过单次翻译的 8 条上限，才能验出"发完一批就不续跑"那个坑
+const FEED = Array.from({ length: 12 }, (_, i) => ({
+  id: 101 + i,
+  full_name: `probe/repo-${i + 1}`,
+  description: `Description number ${i + 1} for the probe repository`,
+  language: "Rust",
+  topics: ["probe"],
+  url: `https://github.com/probe/repo-${i + 1}`,
+  stars: 500 + i,
+  forks: 3,
+  open_issues: 2,
+  subscribers: 4,
+  window: "7d",
+  age_days: 12,
+  slope: 40,
+  curvature: 1.2,
+  score: 0.9 - i / 100,
+  spam: false,
+  channel: i % 4 === 1 ? "profile" : "hot",
+  lang_hit: true,
+  saved: false,
+  seen: false,
+  weeks: [1, 2, 3],
+  why: ["热度上升"],
+}));
+
 const calls: string[] = [];
+const notices: string[] = [];
+const trCalls: number[] = [];
 const dwells: { ms: number; readDepth: number; tab: string }[] = [];
-const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unknown };
-w.__TAURI_INTERNALS__ = {
+const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unknown };w.__TAURI_INTERNALS__ = {
   transformCallback: (cb: () => void) => cb,
   unregisterCallback: () => undefined,
   convertFileSrc: (p: string) => p,
   invoke: async (cmd: string, args: Record<string, unknown>) => {
-    calls.push(`${cmd}:${args?.path ?? args?.kind ?? args?.url ?? ""}`);
+    calls.push(`${cmd}:${args?.path ?? args?.kind ?? args?.url ?? ""}${args?.mode ? "(" + args.mode + ")" : ""}`);
     if (cmd === "get_detail") return DETAIL;
     if (cmd === "repo_tree") return TREE;
-    if (cmd === "repo_file_read") return FILES[args.path as string] ?? { path: args.path, bytes: 0, truncated: false, binary: false, text: "" };
+    if (cmd === "repo_file_read") {
+      const e = FILES[args.path as string];
+      const dirOf = (p: string) => (p.includes("/") ? p.split("/").slice(0, -1).join("/") : "");
+      if (args.mode === "html") {
+        return e?.html
+          ? { path: args.path, bytes: 400, truncated: false, binary: false, text: "", html: e.html, base_path: dirOf(String(args.path)) }
+          : { path: args.path, bytes: 0, truncated: false, binary: false, text: "", error: "这份没有渲染版" };
+      }
+      return e?.raw ?? { path: args.path, bytes: 0, truncated: false, binary: false, text: "" };
+    }
     if (cmd === "repo_list") return LIST[args.kind as string];
     if (cmd === "issue_detail") return ISSUE_DETAIL;
     if (cmd === "pr_detail") return PR_DETAIL;
     if (cmd === "pr_files") return PR_FILES;
     if (cmd === "issue_comments") return { count: 1, items: [{ author: "bob", association: "MEMBER", created_at: "2026-10-02T00:00:00Z", body_html: "<p>探针评论正文</p>" }] };
     if (cmd === "actions_runs") return RUNS;
+    if (cmd === "get_channel") return FEED;
+    if (cmd === "do_translate") {
+      const ts = (args.texts as string[]) ?? [];
+      trCalls.push(ts.length);
+      return { map: Object.fromEntries(ts.map((t) => [t, "中文·" + t.slice(0, 18)])), net: ts.length, cached: 0, failed: 0 };
+    }
     if (cmd === "open_in_app_window") return "已打开应用内浏览窗口";
     // 统计页要用
     if (cmd === "get_stats")
@@ -163,7 +231,7 @@ w.__TAURI_INTERNALS__ = {
     if (cmd === "get_counts") return { all: 900, hot: 800, profile: 587, social: 1923, explore: 40, saved: 0, pool: 4045, last_collect: 0, last_refill: 0 };
     if (cmd === "me_report")
       return { login: "probe", terms: [], langs: [], min_n: 20, profile_hits: 0, starred_snapshot: 0, saved: 0, hides: 0, kinds: [], hide_reasons: [], buckets: [], fitted_at: 0 };
-    if (cmd === "settings_json") return { refill_on: "1", theme: "light", set: "github" };
+    if (cmd === "settings_json") return { refill_on: "1", translate_on: "1", theme: "light", set: "github" };
     if (cmd === "log_event" && args.kind === "dwell") dwells.push(JSON.parse(String(args.payload)));
     return {};
   },
@@ -190,7 +258,7 @@ async function run() {
   };
 
   const root = createRoot(document.getElementById("root")!);
-  root.render(<DetailView repoId={123} onBack={() => undefined} onNotice={() => undefined} />);
+  root.render(<DetailView repoId={123} onBack={() => undefined} onNotice={(m) => notices.push(m)} />);
   await sleep(600);
 
   // ---- 摆法：树在右栏、不做页签，导航是 GitHub 那一排
@@ -200,7 +268,7 @@ async function run() {
       ["概览", "Issues", "Pull requests", "Actions"].every((t) => navLabels.some((l) => l.startsWith(t))),
     navLabels.join(" | "));
   ok("树在右栏，进页面就在（不用点任何页签）", !!box("文件") && txt().includes(".github") && txt().includes("README.md"));
-  ok("右栏的树与左栏的 README 同屏", !!box("文件") && !!box("README") && txt().includes("探针 README"));
+  ok("右栏的树与左栏的 README 同屏", !!box("文件") && !!box("README") && txt().includes("这一节讲功能"));
   ok("树的请求只发一次", calls.filter((c) => c.startsWith("repo_tree")).length === 1, calls.join(","));
   ok("树排在 README 之后（宽视口下即在右侧）",
     (() => {
@@ -212,12 +280,40 @@ async function run() {
     `视口宽 ${innerWidth}（${innerWidth >= 1024 ? "按左右判" : "窄，按 DOM 顺序判"}）`);
   ok("子目录默认收起（展开才看得到里层）", !txt().includes("FUNDING.yml"));
 
+  // ---- 他点的第三条：代码块没有标注（GitHub 的 HTML 里语言在类名里，界面没用起来）
+  const heads = () => [...document.querySelectorAll(".codehead")].map((e) => (e.textContent ?? "").trim());
+  ok("README 的代码块有语言标注条：声明了的取 highlight-source-*，裸围栏写「代码」",
+    heads().join(",") === "shell,代码", heads().join("|"));
+  // ---- 他点的第一条：README 里点「简体中文」没反应（第三方 HTML 的相对链接被 open_url 挡了）
+  ok("GitHub 渲染的标题没有 id，我们补了 slug 锚点才落得了地", !!document.getElementById("功能"));
+  await click(has("a", "功能"), 260);
+  ok("点目录锚点在应用内滚过去：没有notice、也没甩浏览器",
+    notices.length === 0 && externalCalls().length === 0, notices.join("|"));
+  await click(has("a", "简体中文"), 420);
+  ok("点 README 的文件链接进左栏渲染预览（不是开浏览器）",
+    txt().includes("这是渲染出来的中文正文") &&
+      calls.some((c) => c === "repo_file_read:README.zh-CN.md(html)") && externalCalls().length === 0,
+    calls.slice(-3).join(","));
+  await click(one("button", "返回 README"), 300);
+  await click(has("a", "指南"), 420);
+  ok("老缓存里没补全的相对链接同样在应用内接住",
+    txt().includes("指南的渲染正文") && calls.some((c) => c === "repo_file_read:docs/guide.md(html)"),
+    calls.slice(-3).join(","));
+  await click(one("button", "返回 README"), 300);
+  await click(has("a", "主页"), 320);
+  ok("站外链接开应用内窗口，一样不切系统浏览器",
+    calls.some((c) => c.startsWith("open_in_app_window:")) && externalCalls().length === 0, calls.slice(-2).join(","));
+
   // ---- 树：点文件 → 左栏预览
-  await click(one("button", "README.md"));
-  ok("点文件后左栏变成该文件的预览", txt().includes("第二行") && txt().includes("第三行"));
+  await click(one("button", "README.md"), 320);
+  ok("点 md 默认给渲染版，不是源码", txt().includes("渲染后的第一段") && !txt().includes("第二行源码"));
+  ok("点 md 发的是 html 模式请求", calls.some((c) => c === "repo_file_read:README.md(html)"), calls.slice(-3).join(","));
+  ok("渲染版里的代码块同样带语言标注", heads().includes("python"), heads().join("|"));
+  await click(one("button", "看源码"), 320);
+  ok("「看源码」切回带行号的原文", txt().includes("第二行源码") && txt().includes("第三行源码"));
   ok("预览出现时 README 让位", !box("README"));
-  await click(one("button", "返回 README"));
-  ok("返回 README 后左栏还原", !!box("README") && txt().includes("探针 README"));
+  await click(one("button", "返回 README"), 300);
+  ok("返回 README 后左栏还原", !!box("README") && txt().includes("这一节讲功能"));
 
   // ---- issue：点开进应用内详情（不跳浏览器）
   await click(one("nav button", "Issues"), 320);
@@ -254,11 +350,68 @@ async function run() {
     calls.filter((c) => c.startsWith("repo_tree")).join(","));
   ok("整轮流程没有把用户甩到系统浏览器", externalCalls().length === 0, externalCalls().join(","));
 
+  // ---- 发现页的两条（他 2026-10-07）：整行可点、翻译要把一屏翻完
+  initStore();
+  const feedEl = document.createElement("div");
+  feedEl.id = "probe-feed";
+  // 网格是按**容器宽度**出列的，所以这里给一个固定宽度（接近应用里主区的真实宽度）：
+  // 探针结果不该取决于这个调试浏览器窗口多宽
+  feedEl.style.cssText = "width:900px";
+  document.body.appendChild(feedEl);
+  const opens: number[] = [];
+  trCalls.length = 0;
+  createRoot(feedEl).render(
+    <FeedView channel="hot" onOpen={(i) => opens.push(i)} onNotice={(m) => notices.push("feed:" + m)} />
+  );
+  await sleep(30);
+  ok("图还在路上时，每张卡右下角先挂一个加载标志（不标出来就像这仓库没图）",
+    feedEl.querySelectorAll("[data-og-load]").length === 12,
+    String(feedEl.querySelectorAll("[data-og-load]").length));
+  await sleep(600);
+  ok("发现页 12 条都渲染出来", feedEl.innerText.includes("probe/repo-1") && feedEl.innerText.includes("probe/repo-12"));
+  const gridEl = feedEl.querySelector("div.grid") as HTMLElement | null;
+  const cols = gridEl ? getComputedStyle(gridEl).gridTemplateColumns.split(" ").length : 0;
+  ok("发现页按容器宽度出**双列**卡片（不是单列连续流）", cols === 2, `列数=${cols}，容器宽 ${gridEl?.clientWidth ?? 0}，视口宽 ${innerWidth}`);
+  const imgs = [...feedEl.querySelectorAll("article img")] as HTMLImageElement[];
+  ok("每张卡顶部是 GitHub 自己的 OG 预览图，并且是懒加载",
+    imgs.length === 12 && imgs.every((im) => (im.getAttribute("src") ?? "").startsWith("https://opengraph.githubassets.com/1/probe/repo-") && im.getAttribute("loading") === "lazy"),
+    imgs.length + " 张图");
+  ok("卡图对齐**顶部**而不是居中（居中裁会把 OG 图里的头像切一半）",
+    imgs.every((im) => getComputedStyle(im).objectPosition.replace(/\s+/g, " ").endsWith("0%")),
+    imgs.length ? getComputedStyle(imgs[0]).objectPosition : "没有图");
+  ok("同一行的两张卡顶边齐平（卡片高度一致才谈得上扫读）",
+    (() => {
+      const a = imgs[0].getBoundingClientRect(), b = imgs[1].getBoundingClientRect();
+      return Math.abs(a.top - b.top) < 1 && b.left > a.left;
+    })(),
+    imgs.length > 1 ? `卡1 x=${Math.round(imgs[0].getBoundingClientRect().left)} 卡2 x=${Math.round(imgs[1].getBoundingClientRect().left)}` : "");
+  // OG 图会限流（实测撞过 429）：取不到要换成 GitHub 自己的标，而不是灰字或裂图
+  imgs[0].dispatchEvent(new Event("error"));
+  await sleep(120);
+  const cover0 = feedEl.querySelectorAll("[data-og]")[0];
+  ok("图取不到时换成 GitHub 的标（octicon mark-github），卡片其余内容照常",
+    !!cover0.querySelector('svg[aria-label="GitHub"]') && !cover0.querySelector("img") &&
+      feedEl.innerText.includes("probe/repo-1"),
+    cover0 ? cover0.innerHTML.slice(0, 60) : "没有图区");
+  await click(feedEl.querySelector("p") as HTMLElement, 200);
+  ok("点整张卡（简介那一块）就进详情", opens.length === 1 && opens[0] === 101, opens.join(","));
+  const before = opens.length;
+  await click(
+    [...feedEl.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("收藏")) as HTMLElement,
+    260
+  );
+  ok("点「收藏」只收藏、不会顺带把详情页打开",
+    opens.length === before && notices.some((m) => m.startsWith("feed:已收藏")), opens.join(","));
+  await sleep(2600);
+  ok("翻译发完一批会接着发下一批（12 条 = 8 + 4，而不是只发 8 就停）", trCalls.join("+") === "8+4", trCalls.join(","));
+  ok("一屏 12 条简介最后都显示成中文",
+    [...feedEl.querySelectorAll("p")].filter((p) => (p.textContent ?? "").startsWith("中文·")).length === 12,
+    [...feedEl.querySelectorAll("p")].slice(0, 2).map((p) => p.textContent).join(" / "));
+
   // ---- 统计页的补货面板（换一个 root 渲染，不再碰 DetailView）
   const box2 = document.createElement("div");
   box2.id = "probe-stats";
   document.body.appendChild(box2);
-  initStore();
   createRoot(box2).render(<StatsView />);
   await sleep(700);
   const sv = () => box2.innerText;

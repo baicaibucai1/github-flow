@@ -3,7 +3,9 @@ import { Badge, Button, Skeleton } from "@soda/ui";
 import { ChevronRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import { cn } from "cn";
 import { log, openExternal, repoFile, repoTree, type FileResult, type TreeEntry } from "../lib/bridge";
+import { isMd } from "../lib/md";
 import { Box, BoxEmpty, BoxRow } from "./gh";
+import { RichHtml } from "./RichHtml";
 
 /**
  * 仓库文件视图。
@@ -58,6 +60,9 @@ function fmtSize(b: number): string {
 // 一次渲染几万行会把 webview 卡住，所以只渲染前这么多行并说清楚
 const MAX_LINES = 2000;
 
+/** 左栏预览的两种看法：markdown 给 GitHub 官方渲染，其余给带行号的源码 */
+type View = "render" | "source";
+
 export type RepoFiles = {
   nodes: Node[];
   branch: string;
@@ -70,7 +75,9 @@ export type RepoFiles = {
   sel: string;
   file: FileResult | null;
   fileBusy: boolean;
+  view: View;
   pick: (p: string) => void;
+  toggleView: () => void;
   backToReadme: () => void;
   collapseAll: () => void;
 };
@@ -91,6 +98,7 @@ export function useRepoFiles(repoId: number, enabled = true): RepoFiles {
   const [sel, setSel] = useState("");
   const [file, setFile] = useState<FileResult | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
+  const [view, setView] = useState<View>("source");
 
   useEffect(() => {
     // enabled 之前不取：详情本身都没拿到（库里没这个项目 / 网络挂了）时，不该先烧掉一次树请求
@@ -133,17 +141,31 @@ export function useRepoFiles(repoId: number, enabled = true): RepoFiles {
       return n;
     });
 
-  const pick = (p: string) => {
-    setSel(p);
+  const load = (p: string, v: View) => {
     setFileBusy(true);
     setFile(null);
-    repoFile(repoId, p)
+    repoFile(repoId, p, v === "render" ? "html" : "raw")
       .then((r) => {
         setFile(r);
-        log(`file ${p} ${r.bytes}B binary=${r.binary} truncated=${r.truncated}`);
+        log(`file ${p} ${r.bytes}B binary=${r.binary} truncated=${r.truncated} mode=${v === "render" ? "html" : "raw"}`);
       })
       .catch((e) => setFile({ path: p, bytes: 0, truncated: false, binary: false, text: "", error: String(e) }))
       .finally(() => setFileBusy(false));
+  };
+
+  // markdown 默认给渲染版（他 2026-10-07 点的第二条：点 md 只显示一堆源码，等于没读），
+  // 其他文件默认源码；两边都能一键换。
+  const pick = (p: string) => {
+    const v: View = isMd(p) ? "render" : "source";
+    setSel(p);
+    setView(v);
+    load(p, v);
+  };
+
+  const toggleView = () => {
+    const v: View = view === "render" ? "source" : "render";
+    setView(v);
+    load(sel, v);
   };
 
   const backToReadme = () => {
@@ -165,7 +187,9 @@ export function useRepoFiles(repoId: number, enabled = true): RepoFiles {
     sel,
     file,
     fileBusy,
+    view,
     pick,
+    toggleView,
     backToReadme,
     collapseAll,
   };
@@ -269,14 +293,21 @@ export function RepoTreeBox({ f, maxH = "44vh" }: { f: RepoFiles; maxH?: string 
   );
 }
 
-/** 左栏那个预览：选中文件的正文，带行号；二进制与大文件都有话说。 */
+/** 左栏那个预览：markdown 默认给 GitHub 渲染版，其余给带行号的源码；两边可以一键互切。
+ *
+ * ⚠️ 2026-10-07 他点的第二条："文件树点击 md 不渲染"。之前无论点什么文件都塞进行号表格，
+ * README.zh-CN.md 点进去是一堆 `#` 和 `|` —— 那是源码不是内容。渲染版走 GitHub 的
+ * contents + html+json（实测 200），跟 README / issue 正文同一个渲染器，前端不引 markdown 库。
+ */
 export function FilePreview({
   f,
   fullName,
+  repoId,
   onNotice,
 }: {
   f: RepoFiles;
   fullName: string;
+  repoId: number;
   onNotice: (m: string) => void;
 }) {
   const lines = (f.file?.text ?? "").split("\n");
@@ -287,6 +318,11 @@ export function FilePreview({
       aside={
         <span className="flex items-center gap-xs">
           {f.file ? `${f.file.bytes.toLocaleString()} 字节` : ""}
+          {isMd(f.sel) ? (
+            <Button size="xs" variant="ghost" onClick={f.toggleView}>
+              {f.view === "render" ? "看源码" : "看渲染"}
+            </Button>
+          ) : null}
           <Button size="xs" variant="ghost" onClick={f.backToReadme}>
             返回 README
           </Button>
@@ -313,6 +349,22 @@ export function FilePreview({
         <BoxEmpty>
           二进制文件，不做预览（{f.file.bytes.toLocaleString()} 字节）。要看不完整的内容请用「应用内浏览 GitHub」。
         </BoxEmpty>
+      ) : f.view === "render" ? (
+        <div className="max-h-[70vh] overflow-auto">
+          {f.file?.html ? (
+            <RichHtml
+              html={f.file.html}
+              fullName={fullName}
+              repoId={repoId}
+              basePath={f.file.base_path ?? ""}
+              onPick={f.pick}
+              onNotice={onNotice}
+              className="md px-md py-sm"
+            />
+          ) : (
+            <BoxEmpty>这一份没有渲染出来，点上面的「看源码」直接读原文。</BoxEmpty>
+          )}
+        </div>
       ) : (
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full border-collapse font-mono text-caption">

@@ -18,7 +18,7 @@ import {
   type IssueDetail,
   type PrDetail,
 } from "../lib/bridge";
-import { sanitizeHtml } from "../lib/md";
+import { RichHtml } from "../components/RichHtml";
 import { Box, BoxEmpty, BoxRow } from "../components/gh";
 
 /**
@@ -182,13 +182,7 @@ export function ItemDetail({
   const labels = pr?.labels ?? issue?.labels ?? [];
   const url = pr?.url ?? issue?.url ?? `https://github.com/${fullName}/issues/${number}`;
 
-  // 正文里的链接交给系统浏览器：Tauri 会吞掉 target=_blank，不拦就是"点了没反应"
-  const onBodyClick = (e: React.MouseEvent) => {
-    const a = (e.target as HTMLElement).closest?.("a");
-    if (!a) return;
-    e.preventDefault();
-    openExternal(a.getAttribute("href") ?? "").catch((x) => onNotice("没打开这个链接：" + String(x)));
-  };
+  // 正文里的链接一律走 RichHtml：锚点在本篇滚、指向本仓库文件的进左栏预览、其余开应用内窗口
 
   return (
     <div className="flex flex-col gap-md">
@@ -271,11 +265,11 @@ export function ItemDetail({
           ) : null}
 
           <Box title="描述" aside={<span>GitHub 渲染的 HTML · 与 README 同一路</span>}>
-            <div
-              className="md px-md py-md"
-              onClick={onBodyClick}
-              dangerouslySetInnerHTML={{ __html: body ? sanitizeHtml(body) : "<i>这条没有正文</i>" }}
-            />
+            {body ? (
+              <RichHtml html={body} fullName={fullName} repoId={repoId} onNotice={onNotice} />
+            ) : (
+              <BoxEmpty>这条没有正文</BoxEmpty>
+            )}
           </Box>
 
           <Box
@@ -300,7 +294,7 @@ export function ItemDetail({
                   {/* 空正文的评论是真实存在的（实测 react/react#1 第 7 条 body 整个字段都没有），
                       不写这一句，界面上就是一条只有作者名的空行，看着像我们渲染坏了 */}
                   {c.body_html ? (
-                    <div className="md" onClick={onBodyClick} dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.body_html) }} />
+                    <RichHtml html={c.body_html} fullName={fullName} repoId={repoId} onNotice={onNotice} className="md" />
                   ) : (
                     <div className="text-caption text-muted-foreground">（这条评论没有正文）</div>
                   )}

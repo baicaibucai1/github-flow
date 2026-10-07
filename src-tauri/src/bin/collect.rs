@@ -147,21 +147,67 @@ fn main() {
   // ---- 通用认证探针：collect api /repos/{o}/{r}/stargazers
   // 用来确认"这个端点在**我们的凭据下**到底返回什么"。实测过的一个反例：
   // /stargazers 匿名 401，而我们带 token 却拿到 404 —— 方向反了，必须当场看清是哪一层的问题。
-  // 只打印状态码与响应的前 200 字符，绝不回显任何凭据。
+  // 只打印状态码与响应的前 200 个字符，绝不回显任何凭据；要完整正文就再给一个落盘路径。
   if args.get(1).map(|s| s.as_str()) == Some("api") {
     let path = args.get(2).map(|s| s.as_str()).unwrap_or("");
     if path.is_empty() {
-      println!("用法：collect api /repos/<owner>/<repo>/stargazers [accept]");
+      println!("用法：collect api /repos/<owner>/<repo>/stargazers [accept] [落盘路径]");
       return;
     }
     let accept = args.get(3).map(|s| s.as_str()).unwrap_or("application/vnd.github+json");
+    let dump = args.get(4).map(|s| s.as_str()).unwrap_or("");
     match feed::probe_get(path, accept) {
       Ok((code, body)) => {
-        println!("[api] {path} → {code}");
-        println!("{}", &body[..body.len().min(200)]);
+        println!("[api] {path} → {code} 共 {} 字符", body.chars().count());
+        // 按字节切会在中文/emoji 的中间劈开直接 panic，这里按字符取
+        println!("{}", body.chars().take(200).collect::<String>());
+        if !dump.is_empty() {
+          if let Err(e) = std::fs::write(dump, &body) { println!("[api] 落盘失败：{e}"); }
+          else { println!("[api] 完整响应写到 {dump}"); }
+        }
       }
       Err(e) => println!("[api] {path} 请求失败：{e}"),
     }
+    return;
+  }
+  // ---- 离线单元：相对路径改写器。这条 bug 是"链接排在下一个 src= 之前就没被改写"，
+  // 只有把 fixture 喂进去、看输出里的 href 是不是绝对地址，才能在没有网络时也把它钉住。
+  if args.get(1).map(|s| s.as_str()) == Some("rewrite") {
+    let fixture = r##"<p><a href="README.zh-CN.md">简体中文</a> <img src="public/logo.png" alt="l"> <a href="#用法">锚点</a> <a href="docs/a.md">文档</a> <img src="https://example.com/x.png">"##;
+    let (out, n) = feed::rewrite_readme_urls(
+      fixture,
+      "https://raw.githubusercontent.com/o/r/main",
+      "https://github.com/o/r/blob/main",
+      "https://github.com/o/r",
+    );
+    println!("[rewrite] 改写 {n} 个");
+    println!("RAW {}", serde_json::json!({ "html": out, "fixed": n }).to_string());
+    return;
+  }
+  // ---- 翻译：先命令行验一次，才分得清"没翻"是缓存没命中、额度被打满，还是代码把失败当结果存了
+  // 用法：collect translate [--url=https://坏掉的主机] <文本...>
+  // RAW 里带 poisoned（库里 zh 与原文一样的行数），那条就是污染缓存的证据。
+  if args.get(1).map(|s| s.as_str()) == Some("translate") {
+    let conn = feed::open_db().expect("打不开数据库");
+    let st = feed::get_settings(&conn);
+    let mut url = st["translate_url"].as_str().unwrap_or("").to_string();
+    let mut texts: Vec<String> = Vec::new();
+    for a in args.iter().skip(2) {
+      match a.strip_prefix("--url=") {
+        Some(u) => url = u.to_string(),
+        None => texts.push(a.clone()),
+      }
+    }
+    if texts.is_empty() {
+      texts.push("A tiny disk cleaner written in Rust".to_string());
+    }
+    let v = feed::translate(&conn, &url, st["lang"].as_str().unwrap_or("zh-CN"), &texts);
+    let poisoned: i64 = conn
+      .query_row("SELECT COUNT(1) FROM translation WHERE zh = src", [], |r| r.get(0))
+      .unwrap_or(-1);
+    println!("[translate] 送 {} 条，联网 {} 条、命中缓存 {} 条、失败 {} 条，库里 zh=原文 的行数={}",
+      texts.len(), v["net"], v["cached"], v["failed"], poisoned);
+    println!("RAW {}", serde_json::json!({ "result": v, "poisoned": poisoned }));
     return;
   }
   // ---- 静默补货一步 / 相似用户通道 / 补货状态
@@ -219,7 +265,13 @@ fn main() {
     let emit = &mut |m: String| println!("{m}");
     let r = match sub {
       "tree" => feed::repo_tree(&conn, id, emit),
-      "file" => feed::repo_file_read(&conn, id, if arg3.is_empty() { "README.md" } else { arg3 }, emit),
+      "file" => feed::repo_file_read(
+        &conn,
+        id,
+        if arg3.is_empty() { "README.md" } else { arg3 },
+        args.get(4).map(|s| s.as_str()).unwrap_or("raw"),
+        emit,
+      ),
       "list" => feed::repo_list(&conn, id, if arg3.is_empty() { "issue" } else { arg3 }, emit),
       "issue" => feed::issue_detail(&conn, id, num, emit),
       "pr" => feed::pr_detail(&conn, id, num, emit),
@@ -238,7 +290,10 @@ fn main() {
           }
           "file" => {
             println!("path={} 字节={} 二进制={} 截断={}", v["path"], v["bytes"], v["binary"], v["truncated"]);
-            for l in v["text"].as_str().unwrap_or("").lines().take(12) { println!("  | {l}"); }
+            match v["html"].as_str() {
+              Some(h) => println!("  渲染版 HTML {} 字符：{}", h.chars().count(), h.chars().take(160).collect::<String>()),
+              None => { for l in v["text"].as_str().unwrap_or("").lines().take(12) { println!("  | {l}"); } }
+            }
           }
           "list" => {
             println!("kind={} 条数={}", v["kind"], v["count"]);

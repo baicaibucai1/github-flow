@@ -45,6 +45,7 @@ export type Detail = {
   weeks?: number[];
   saved?: boolean;
   readme_html?: string;
+  readme_path?: string;
   releases?: string;
   langs?: string[];
   error?: string;
@@ -227,6 +228,9 @@ export type FileResult = {
   truncated: boolean;
   binary: boolean;
   text: string;
+  /** mode="html" 时由 GitHub 官方渲染好的 markdown；base_path 是这个文件所在目录（相对链接要用） */
+  html?: string;
+  base_path?: string;
   error?: string;
 };
 export type ListItem = {
@@ -244,8 +248,8 @@ export type ListResult = { kind: string; items: ListItem[]; count: number; error
 export function repoTree(id: number): Promise<TreeResult> {
   return call<TreeResult>("repo_tree", { repoId: id });
 }
-export function repoFile(id: number, path: string): Promise<FileResult> {
-  return call<FileResult>("repo_file_read", { repoId: id, path });
+export function repoFile(id: number, path: string, mode: "raw" | "html" = "raw"): Promise<FileResult> {
+  return call<FileResult>("repo_file_read", { repoId: id, path, mode });
 }
 export function repoList(id: number, kind: "issue" | "pull"): Promise<ListResult> {
   return call<ListResult>("repo_list", { repoId: id, kind });
