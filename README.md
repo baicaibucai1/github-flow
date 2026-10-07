@@ -1,7 +1,7 @@
-# Github Flow · gh-feed
+# GitHub Flow · gh-feed
 
 本地优先的 GitHub 项目发现器。不是 GitHub 客户端——它只解决一件事：**帮你决定要不要深入看某个项目**。
-（界面显示名是 **Github Flow**；包名、数据目录 `%LOCALAPPDATA%\gh-feed\` 仍是 `gh-feed`，
+（界面显示名是 **GitHub Flow**；包名、数据目录 `%LOCALAPPDATA%\gh-feed\` 仍是 `gh-feed`，
 改它们会把已经攒下的库和凭据文件孤立掉，要改得单独做一次迁移。）
 
 状态：**可运行的原型**。窗口能开、数据是真的、推送会随你的行为变化。未发布、未签名。

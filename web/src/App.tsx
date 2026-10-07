@@ -127,7 +127,7 @@ export default function App() {
         nav={
           <SidebarContent>
             <SidebarGroup>
-              <SidebarGroupLabel>Github Flow</SidebarGroupLabel>
+              <SidebarGroupLabel>GitHub Flow</SidebarGroupLabel>
               <SidebarMenu>
                 {RAIL.map(({ id, label, icon: Icon }) => (
                   <SidebarMenuItem key={id}>
