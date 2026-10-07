@@ -1,0 +1,130 @@
+{
+  "title": "github-flow-pipeline",
+  "preset": "flat",
+  "width": 1180,
+  "height": 574,
+  "canvasPad": 18,
+  "theme": {
+    "teal": { "fill": "#1F6FEB", "fg": "#FFFFFF" },
+    "dark": { "fill": "#0D1117", "fg": "#FFFFFF" },
+    "green": { "fill": "#238636", "fg": "#FFFFFF" },
+    "panel": { "fill": "#EDF1F3", "fg": "#0D1117" },
+    "purple": { "fill": "#634F7D", "fg": "#FFFFFF" },
+    "slate": { "fill": "#666666", "fg": "#FFFFFF" },
+    "white": { "fill": "#FFFFFF", "fg": "#0D1117" }
+  },
+  "style": { "gap": 12, "pad": 8, "size": 15 },
+  "root": {
+    "kind": "stack",
+    "gap": 12,
+    "pad": 0,
+    "children": [
+      {
+        "kind": "zone",
+        "tone": "panel",
+        "title": "界面 · 本机渲染，没有服务端",
+        "titleSize": 15,
+        "titleH": 26,
+        "titleAlign": "left",
+        "dir": "row",
+        "gap": 8,
+        "pad": 6,
+        "h": 74,
+        "children": [
+          { "label": "发现\n双列卡片流", "tone": "green", "size": 13, "grow": 1 },
+          { "label": "项目详情\nREADME · 文件树 · issue/PR", "tone": "green", "size": 12, "grow": 1.5 },
+          { "label": "我的", "tone": "green", "size": 13, "grow": 0.7 },
+          { "label": "统计", "tone": "green", "size": 13, "grow": 0.7 },
+          { "label": "设置", "tone": "green", "size": 13, "grow": 0.7 }
+        ]
+      },
+      {
+        "kind": "zone",
+        "tone": "panel",
+        "title": "Tauri 命令层 main.rs · 界面不许写 SQL、不许自己打分",
+        "titleSize": 15,
+        "titleH": 26,
+        "titleAlign": "left",
+        "dir": "row",
+        "gap": 6,
+        "pad": 6,
+        "h": 62,
+        "children": [
+          { "label": "get_channel", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "get_detail", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "repo_tree / file_read", "tone": "teal", "size": 12, "grow": 1.25 },
+          { "label": "issue / pr / actions", "tone": "teal", "size": 12, "grow": 1.25 },
+          { "label": "log_impression / log_event", "tone": "teal", "size": 12, "grow": 1.4 },
+          { "label": "refill_now / settings", "tone": "teal", "size": 12, "grow": 1.25 }
+        ]
+      },
+      {
+        "kind": "row",
+        "gap": 0,
+        "pad": 0,
+        "h": 56,
+        "stretch": false,
+        "children": [
+          {
+            "label": "feed.rs · 唯一的取数出入口：配额记账 → 缓存 → 落库 → 打分 → 槽位混排",
+            "tone": "dark",
+            "size": 17,
+            "bold": true,
+            "grow": 1,
+            "h": 56
+          },
+          {
+            "label": "GitHub REST",
+            "sub": "core 5000/h · search 30/min",
+            "shape": "tab",
+            "corner": "tl",
+            "tone": "purple",
+            "bold": true,
+            "size": 13,
+            "subSize": 10,
+            "w": 176,
+            "h": 56
+          }
+        ]
+      },
+      {
+        "kind": "zone",
+        "tone": "panel",
+        "title": "四条通道 · 静默补货器每 20 分钟轮转一步，四路写同一张 feed_hit（权重不同，不许混用）",
+        "titleSize": 15,
+        "titleH": 26,
+        "titleAlign": "left",
+        "dir": "row",
+        "gap": 8,
+        "pad": 6,
+        "h": 98,
+        "children": [
+          { "label": "热度", "sub": "born 7/30/90 天 × star 档\nstargazers/history 复核斜率", "tone": "teal", "size": 15, "subSize": 11, "grow": 1 },
+          { "label": "画像", "sub": "收藏+自建仓库+行为 → TF-IDF\n多措辞 search → RRF 融合", "tone": "teal", "size": 15, "subSize": 11, "grow": 1 },
+          { "label": "相似用户", "sub": "我关注 1.0 · 他们 follow 0.6\n关注我 0.5 · star 过我 0.3", "tone": "teal", "size": 15, "subSize": 11, "grow": 1 },
+          { "label": "探索", "sub": "≤7 天、star 1..19\n按语言分层随机抽", "tone": "teal", "size": 15, "subSize": 11, "grow": 1 }
+        ]
+      },
+      {
+        "kind": "zone",
+        "tone": "dark",
+        "title": "本机 SQLite · %LOCALAPPDATA%\\gh-feed\\gh-feed.db —— 上面所有层都坐在这一张库上",
+        "titleSize": 15,
+        "titleH": 26,
+        "titleAlign": "left",
+        "dir": "row",
+        "gap": 6,
+        "pad": 6,
+        "grow": 1,
+        "children": [
+          { "label": "repo\n曲线 days[7]", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "feed_hit\n通道 · rrf · 命中词", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "impression\n(项目,会话) 去重", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "event\nstar/打开/停留/不感兴趣", "tone": "teal", "size": 11, "grow": 1.15 },
+          { "label": "权重表\n分桶 n≥20 才生效", "tone": "teal", "size": 12, "grow": 1 },
+          { "label": "缓存表\ndoc_cache · repo_file\nsocial_cache · translation", "tone": "teal", "size": 11, "grow": 1.25 }
+        ]
+      }
+    ]
+  }
+}

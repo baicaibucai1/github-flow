@@ -8,6 +8,7 @@ import { DetailView } from "./views/DetailView";
 import { FeedView } from "./views/FeedView";
 import { StatsView } from "./views/StatsView";
 import { initStore } from "./lib/store";
+import { SHOT } from "./shotdata";
 
 const TREE = {
   branch: "main",
@@ -185,6 +186,8 @@ const FEED = Array.from({ length: 12 }, (_, i) => ({
 const calls: string[] = [];
 const notices: string[] = [];
 const trCalls: number[] = [];
+// ?shot=feed|detail 是"给 README 出图"的模式：渲染真数据、不跑断言、不画浮层
+const SHOT_MODE = new URLSearchParams(location.search).get("shot") ?? "";
 const dwells: { ms: number; readDepth: number; tab: string }[] = [];
 const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unknown };w.__TAURI_INTERNALS__ = {
   transformCallback: (cb: () => void) => cb,
@@ -192,6 +195,20 @@ const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unkno
   convertFileSrc: (p: string) => p,
   invoke: async (cmd: string, args: Record<string, unknown>) => {
     calls.push(`${cmd}:${args?.path ?? args?.kind ?? args?.url ?? ""}${args?.mode ? "(" + args.mode + ")" : ""}`);
+    if (SHOT_MODE) {
+      // 出图模式喂真数据；翻译关掉，否则卡上会显示假译文"中文·…"
+      if (cmd === "get_channel")
+        // 出图取 6 张有简介的：门面图第一格是"（无简介）"很难看；六张一屏放得下，也不会拍到还没解码的图
+        return ((SHOT.cards as { seen: boolean; description?: string }[]) ?? [])
+          .filter((c) => !!c.description)
+          .slice(0, 6)
+          .map((c) => ({ ...c, seen: false }));
+      if (cmd === "get_detail") return SHOT.detail;
+      if (cmd === "repo_tree") return SHOT.tree;
+      if (cmd === "repo_list")
+        return (SHOT.lists as Record<string, unknown>)?.[String(args?.kind)] ?? { kind: args?.kind, count: 0, items: [] };
+      if (cmd === "settings_json") return { refill_on: "1", translate_on: "0", theme: "light", set: "github" };
+    }
     if (cmd === "get_detail") return DETAIL;
     if (cmd === "repo_tree") return TREE;
     if (cmd === "repo_file_read") {
@@ -464,4 +481,77 @@ const errs: string[] = [];
 window.addEventListener("error", (e) => errs.push(String(e.message)));
 window.addEventListener("unhandledrejection", (e) => errs.push("reject " + String(e)));
 
-await run();
+/** 给 README 出图：固定 1200px 宽（接近应用主区真实宽度），只渲染一个视图，等图落地 */
+async function renderShot(which: string) {
+  initStore();
+  document.body.style.cssText = "width:1200px;margin:0;background:var(--background);overflow-x:hidden";
+  // 出图时关掉所有过渡：卡图有 300ms 淡入，无头浏览器在 load 事件那一刻就拍，
+  // 拍到的是 opacity≈0 的"空白图区"（上一版八张全白就是这么来的）
+  const st = document.createElement("style");
+  st.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+  document.head.appendChild(st);
+  // 这台机器直连 github.com 不通（只有走代理才通），而出图用的浏览器实例没配代理，
+  // 所以 OG 卡图先在本地留一份（web/public/shots/，已 gitignore，复现命令见 README 配图一节）。
+  // 换 src 不能事后改属性 —— React 下一次渲染就给你写回远端地址（试过，图还是全裂）。
+  // 这里只在出图页面里拦一次 setter：赋值为远端 URL 时改成本地副本，应用代码一行没动。
+  const local = (v: string) => {
+    const m = String(v).match(/^https:\/\/opengraph\.githubassets\.com\/1\/(.+)$/);
+    return m ? `/shots/${m[1].replace(/\//g, "_")}.png` : v;
+  };
+  const d = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src")!;
+  Object.defineProperty(HTMLImageElement.prototype, "src", {
+    get: d.get,
+    set(v: string) {
+      d.set!.call(this, local(v));
+    },
+  });
+  // 光靠事后循环改 loading 还是会漏掉视口外的：出图页一律即时加载（应用里仍是懒加载）
+  const ld = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "loading")!;
+  Object.defineProperty(HTMLImageElement.prototype, "loading", {
+    get: ld.get,
+    set() {
+      ld.set!.call(this, "eager");
+    },
+  });
+  const root = createRoot(document.getElementById("root")!);
+  const noop = () => undefined;
+  // 先把本地副本灌进 HTTP 缓存再渲染：无头浏览器里懒加载 + 虚拟时间会抢不过截图那一刻，
+  // 上一版就是这么拍出"八张卡只有一张有图"的
+  await Promise.all(
+    ((SHOT.cards as { full_name: string }[]) ?? []).map(
+      (c) =>
+        new Promise<void>((res) => {
+          const im = new Image();
+          im.onload = () => res();
+          im.onerror = () => res();
+          im.src = local(`https://opengraph.githubassets.com/1/${c.full_name}`);
+        })
+    )
+  );
+  if (which === "feed") {
+    root.render(<FeedView channel="hot" onOpen={noop} onNotice={noop} />);
+  } else if (which === "detail") {
+    root.render(<DetailView repoId={Number(SHOT.detail?.id ?? 1)} onBack={noop} onNotice={noop} />);
+  }
+  const painted = async () => {
+    const im = [...document.querySelectorAll("article img, .md img")] as HTMLImageElement[];
+    await Promise.all(im.map((x) => x.decode().catch(() => null)));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+  };
+  for (let i = 0; i < 60; i++) {
+    const im = [...document.querySelectorAll("article img")] as HTMLImageElement[];
+    // 出图页的 body 宽 1200px，而这个浏览器窗口只有 ~550px —— 视口外的懒加载图根本不发请求
+    im.forEach((x) => (x.loading = "eager"));
+    if (im.length && im.every((x) => x.complete && x.naturalWidth > 0)) break;
+    await sleep(150);
+  }
+  // 无头截图的时机不靠定时器（虚拟时间会把 sleep 瞬间跑完，真网络还没回来），
+  // 而是等每张图 decode() 完 + 两帧 rAF —— 这些是真实任务，虚拟时间必须等它们
+  await painted();
+  const imgs = [...document.querySelectorAll("img")];
+  document.title = `SHOT ${which} 图 ${imgs.filter((i) => i.complete && i.naturalWidth).length}/${imgs.length}`;
+  await painted();
+}
+
+if (SHOT_MODE) await renderShot(SHOT_MODE);
+else await run();

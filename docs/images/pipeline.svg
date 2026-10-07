@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="574" viewBox="0 0 1180 574">
+  <title>github-flow-pipeline</title>
+  <desc>flat-block-diagram preset=flat</desc>
+  <rect width="100%" height="100%" fill="#FFFFFF"/>
+  <rect id="-" fill="#EDF1F3" x="18" y="18" width="1144" height="74"/>
+  <rect id="-" fill="#238636" x="18" y="50" width="241.7" height="36"/>
+  <rect id="-README-issue-PR" fill="#238636" x="267.7" y="50" width="362.6" height="36"/>
+  <rect id="-" fill="#238636" x="638.3" y="50" width="169.2" height="36"/>
+  <rect id="-" fill="#238636" x="815.6" y="50" width="169.2" height="36"/>
+  <rect id="-" fill="#238636" x="992.8" y="50" width="169.2" height="36"/>
+  <rect id="Tauri-main.rs-SQL-" fill="#EDF1F3" x="18" y="104" width="1144" height="62"/>
+  <rect id="get_channel" fill="#1F6FEB" x="18" y="136" width="155.8" height="24"/>
+  <rect id="get_detail" fill="#1F6FEB" x="179.8" y="136" width="155.8" height="24"/>
+  <rect id="repo_tree-file_read" fill="#1F6FEB" x="341.6" y="136" width="194.8" height="24"/>
+  <rect id="issue-pr-actions" fill="#1F6FEB" x="542.4" y="136" width="194.8" height="24"/>
+  <rect id="log_impression-log_event" fill="#1F6FEB" x="743.1" y="136" width="218.1" height="24"/>
+  <rect id="refill_now-settings" fill="#1F6FEB" x="967.2" y="136" width="194.8" height="24"/>
+  <rect id="feed.rs-" fill="#0D1117" x="18" y="178" width="968" height="56"/>
+  <polygon id="GitHub-REST" fill="#634F7D" points="991 178 1162 178 1162 234 986 234 986 183"/>
+  <rect id="-20-feed_hit-" fill="#EDF1F3" x="18" y="246" width="1144" height="98"/>
+  <rect id="-" fill="#1F6FEB" x="18" y="278" width="280" height="60"/>
+  <rect id="-" fill="#1F6FEB" x="306" y="278" width="280" height="60"/>
+  <rect id="-" fill="#1F6FEB" x="594" y="278" width="280" height="60"/>
+  <rect id="-" fill="#1F6FEB" x="882" y="278" width="280" height="60"/>
+  <rect id="-SQLite-LOCALAPPDATA-gh-feed-gh-feed.db-" fill="#0D1117" x="18" y="356" width="1144" height="200"/>
+  <rect id="repo-days-7-" fill="#1F6FEB" x="18" y="388" width="174.1" height="162"/>
+  <rect id="feed_hit-rrf-" fill="#1F6FEB" x="198.1" y="388" width="174.1" height="162"/>
+  <rect id="impression-" fill="#1F6FEB" x="378.1" y="388" width="174.1" height="162"/>
+  <rect id="event-star-" fill="#1F6FEB" x="558.2" y="388" width="200.2" height="162"/>
+  <rect id="-n-20-" fill="#1F6FEB" x="764.4" y="388" width="174.1" height="162"/>
+  <rect id="-doc_cache-repo_file-social_cache-transl" fill="#1F6FEB" x="944.4" y="388" width="217.6" height="162"/>
+  <text x="24" y="38.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#0D1117" text-anchor="start">界面 · 本机渲染，没有服务端</text>
+  <text x="138.9" y="64.4" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" fill="#FFFFFF" text-anchor="middle">发现</text>
+  <text x="138.9" y="81" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" fill="#FFFFFF" text-anchor="middle">双列卡片流</text>
+  <text x="449" y="64.6" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">项目详情</text>
+  <text x="449" y="80" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">README · 文件树 · issue/PR</text>
+  <text x="723" y="72.7" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" fill="#FFFFFF" text-anchor="middle">我的</text>
+  <text x="900.2" y="72.7" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" fill="#FFFFFF" text-anchor="middle">统计</text>
+  <text x="1077.4" y="72.7" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" fill="#FFFFFF" text-anchor="middle">设置</text>
+  <text x="24" y="124.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#0D1117" text-anchor="start">Tauri 命令层 main.rs · 界面不许写 SQL、不许自己打分</text>
+  <text x="95.9" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">get_channel</text>
+  <text x="257.7" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">get_detail</text>
+  <text x="439" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">repo_tree / file_read</text>
+  <text x="639.7" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">issue / pr / actions</text>
+  <text x="852.2" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">log_impression / log_event</text>
+  <text x="1064.6" y="152.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">refill_now / settings</text>
+  <text x="502" y="212.1" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="17" font-weight="bold" fill="#FFFFFF" text-anchor="middle">feed.rs · 唯一的取数出入口：配额记账 → 缓存 → 落库 → 打分 → 槽位混排</text>
+  <text x="1074" y="202.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">GitHub REST</text>
+  <text x="1074" y="219.9" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="10" fill="#FFFFFF" text-anchor="middle">core 5000/h · search 30/min</text>
+  <text x="24" y="266.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#0D1117" text-anchor="start">四条通道 · 静默补货器每 20 分钟轮转一步，四路写同一张 feed_hit（权重不同，不许混用）</text>
+  <text x="158" y="297.1" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#FFFFFF" text-anchor="middle">热度</text>
+  <text x="158" y="316.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">born 7/30/90 天 × star 档</text>
+  <text x="158" y="330.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">stargazers/history 复核斜率</text>
+  <text x="446" y="297.1" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#FFFFFF" text-anchor="middle">画像</text>
+  <text x="446" y="316.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">收藏+自建仓库+行为 → TF-IDF</text>
+  <text x="446" y="330.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">多措辞 search → RRF 融合</text>
+  <text x="734" y="297.1" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#FFFFFF" text-anchor="middle">相似用户</text>
+  <text x="734" y="316.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">我关注 1.0 · 他们 follow 0.6</text>
+  <text x="734" y="330.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">关注我 0.5 · star 过我 0.3</text>
+  <text x="1022" y="297.1" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#FFFFFF" text-anchor="middle">探索</text>
+  <text x="1022" y="316.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">≤7 天、star 1..19</text>
+  <text x="1022" y="330.8" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">按语言分层随机抽</text>
+  <text x="24" y="376.3" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="15" fill="#FFFFFF" text-anchor="start">本机 SQLite · %LOCALAPPDATA%\gh-feed\gh-feed.db —— 上面所有层都坐在这一张库上</text>
+  <text x="105" y="465.6" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">repo</text>
+  <text x="105" y="481" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">曲线 days[7]</text>
+  <text x="285.1" y="465.6" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">feed_hit</text>
+  <text x="285.1" y="481" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">通道 · rrf · 命中词</text>
+  <text x="465.2" y="465.6" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">impression</text>
+  <text x="465.2" y="481" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">(项目,会话) 去重</text>
+  <text x="658.3" y="465.9" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">event</text>
+  <text x="658.3" y="480" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">star/打开/停留/不感兴趣</text>
+  <text x="851.4" y="465.6" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">权重表</text>
+  <text x="851.4" y="481" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="12" fill="#FFFFFF" text-anchor="middle">分桶 n≥20 才生效</text>
+  <text x="1053.2" y="458.9" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">缓存表</text>
+  <text x="1053.2" y="473" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">doc_cache · repo_file</text>
+  <text x="1053.2" y="487" font-family="&quot;Helvetica Neue&quot;, Helvetica, Arial, &quot;Liberation Sans&quot;, &quot;Noto Sans&quot;, &quot;PingFang SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif" font-size="11" fill="#FFFFFF" text-anchor="middle">social_cache · translation</text>
+</svg>

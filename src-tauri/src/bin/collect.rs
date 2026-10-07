@@ -61,6 +61,10 @@ fn main() {
     println!("  full_name={} readme字符={} releases={} langs={}",
       v["full_name"], v["readme_html"].as_str().map(|x|x.len()).unwrap_or(0),
       v["releases"].as_str().map(|x| x.lines().count()).unwrap_or(0), v["langs"]);
+    // 界面截图用的就是这份数据（用真仓库而不是编的名字），所以再加一个原样导出的口子
+    if args.get(3).map(|s| s.as_str()) == Some("raw") {
+      println!("RAW {s}");
+    }
     return;
   }
   if args.get(1).map(|s| s.as_str()) == Some("explore") {

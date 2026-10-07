@@ -26,3 +26,6 @@ web/dist/
 install.log
 
 web/probe-dist/
+
+# 出图用的 OG 卡图本地副本（可再生，见 README 配图一节）
+web/public/shots/
