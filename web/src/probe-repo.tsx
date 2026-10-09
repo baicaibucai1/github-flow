@@ -227,6 +227,8 @@ const w = window as unknown as { __TAURI_INTERNALS__: unknown; __PROBE__?: unkno
     if (cmd === "pr_files") return PR_FILES;
     if (cmd === "issue_comments") return { count: 1, items: [{ author: "bob", association: "MEMBER", created_at: "2026-10-02T00:00:00Z", body_html: "<p>探针评论正文</p>" }] };
     if (cmd === "actions_runs") return RUNS;
+    if (cmd === "refill_now")
+      return { channel: "profile", inserted: 7, core_used: 8, search_used: 6, note: "", pool_before: 4762, pool_after: 4769 };
     if (cmd === "get_channel") return FEED;
     if (cmd === "do_translate") {
       const ts = (args.texts as string[]) ?? [];
@@ -424,6 +426,20 @@ async function run() {
   ok("一屏 12 条简介最后都显示成中文",
     [...feedEl.querySelectorAll("p")].filter((p) => (p.textContent ?? "").startsWith("中文·")).length === 12,
     [...feedEl.querySelectorAll("p")].slice(0, 2).map((p) => p.textContent).join(" / "));
+
+  // ---- 「刷新」：先补一轮再重读本屏（只重排本机已有的不叫刷新）
+  const chBefore = calls.filter((c) => c.startsWith("get_channel")).length;
+  await click(
+    [...feedEl.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("刷新")) as HTMLElement,
+    900
+  );
+  ok(
+    "点「刷新」会先跑一步补货、再重读本屏，并把真实请求数与池子变化回显成一句话",
+    calls.filter((c) => c === "refill_now:").length === 1 &&
+      calls.filter((c) => c.startsWith("get_channel")).length > chBefore &&
+      notices.some((m) => m.includes("补了一轮：通道 profile 新增 7 条") && m.includes("core 8 / search 6") && m.includes("4762 → 4769")),
+    calls.slice(-3).join(",")
+  );
 
   // ---- 统计页的补货面板（换一个 root 渲染，不再碰 DetailView）
   const box2 = document.createElement("div");

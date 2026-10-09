@@ -47,7 +47,7 @@ const PAGES = [
   {
     file: "src/views/FeedView.tsx",
     name: "发现",
-    need: ["显示更多", "热度榜是空的", "重新读取", "双列卡片网格"],
+    need: ["显示更多", "热度榜是空的", "重新读取", "双列卡片网格", "刷新"],
     // 2026-10-07 他把发现页改成双列卡片，这条 ban（sm:grid-cols-2）到此作废；
     // 但 CSS columns 那种真瀑布流仍然不许——它会把条目顺序与曝光 slot 的口径冲掉。
     ban: [/columns:/],
@@ -402,6 +402,13 @@ const CHECKS = [
     pass: /点整张卡（简介那一块）就进详情/.test(probeSrc) && /8\+4/.test(probeSrc) &&
       /双列\*\*卡片/.test(probeSrc) && /opengraph\.githubassets\.com/.test(probeSrc) &&
       /data-og-load/.test(probeSrc) && /objectPosition/.test(probeSrc),
+  },
+  {
+    id: "feed-refresh",
+    what: "发现页有「刷新」：先 refill_now 补一步、再 fetchPage(0) 重读，回显通道/新增/真实请求数/池子前后；配额跳过时也要说明",
+    pass: /const refresh = \(\) =>/.test(feedview) && /refillNow\(\)/.test(feedview) &&
+      /fetchPage\(0\)\.then\(\(\) => r\)/.test(feedview) && /补了一轮：通道/.test(feedview) &&
+      /只重读了本机已有的内容/.test(feedview) && /刷新中/.test(feedview),
   },
 ];
 

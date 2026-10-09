@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Skeleton } from "@soda/ui";
-import { call, LIMIT, log, type Card } from "../lib/bridge";
+import { call, LIMIT, log, refillNow, type Card } from "../lib/bridge";
 import { RepoCard } from "../components/RepoCard";
 import { Box, BoxEmpty, MoreRow } from "../components/gh";
 
@@ -29,6 +29,7 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
   const [items, setItems] = useState<Card[]>([]);
   const [offset, setOffset] = useState(0);
   const [phase, setPhase] = useState<"idle" | "loading" | "more" | "done">("loading");
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchPage = useCallback(
     async (from: number) => {
@@ -46,6 +47,32 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
     },
     [channel, onNotice]
   );
+
+  /**
+   * 「刷新」= 先跑一步静默补货（真的去 GitHub 抓新内容，带配额护栏），再重读本屏。
+   *
+   * 为什么不做成"只重读本机库"：榜的顺序是固定槽位算出来的，池子没变时点了跟没点一样，
+   * 那不叫刷新。也不复用顶栏的「采集」：那一次要 60~90 个请求，刷新不该顺手花掉那么多额度。
+   * 补货一步最多十几个请求，且 core 剩余 <200 时会自己跳过 —— 跳过也要告诉他，
+   * 否则他以为刷新没生效。
+   */
+  const refresh = () => {
+    setRefreshing(true);
+    void refillNow()
+      .then((r) => fetchPage(0).then(() => r))
+      .then((r) =>
+        onNotice(
+          r.channel === "skip"
+            ? `没补货（${r.note}），只重读了本机已有的内容`
+            : `补了一轮：通道 ${r.channel} 新增 ${r.inserted} 条，请求 core ${r.core_used} / search ${r.search_used}，池子 ${r.pool_before} → ${r.pool_after}`
+        )
+      )
+      .catch((e) => {
+        onNotice("刷新失败：" + String(e));
+        void fetchPage(0);
+      })
+      .finally(() => setRefreshing(false));
+  };
 
   useEffect(() => {
     setItems([]);
@@ -93,11 +120,16 @@ export function FeedView({ channel, onOpen, onNotice }: FeedViewProps) {
           决定一屏摆几张卡的是主区宽度，不是浏览器窗口宽度——侧栏收放、窗口分屏都该跟着变，
           而且这样渲染探针能在固定宽度下真的数出"两列"，而不是撞运气看视口多宽。
           排序说明从 Box 表头挪到这里，因为卡片流没有"表头"这个东西了。 */}
-      <div className="flex flex-wrap items-baseline justify-between gap-xs">
+      <div className="flex flex-wrap items-center justify-between gap-xs">
         <h1 className="text-heading tabular-nums">{items.length} 个候选</h1>
-        <span className="text-caption text-muted-foreground">
-          通道 {channel} · 排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权
-        </span>
+        <div className="flex flex-wrap items-center gap-sm">
+          <span className="text-caption text-muted-foreground">
+            通道 {channel} · 排序是线性打分（斜率 0.6 + 曲率 0.2 + 新鲜度 0.15 + 活跃 0.05），规则层做乘性降权
+          </span>
+          <Button size="xs" variant="outline" disabled={refreshing} onClick={refresh}>
+            {refreshing ? "刷新中…" : "刷新"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-md @lg:grid-cols-2">

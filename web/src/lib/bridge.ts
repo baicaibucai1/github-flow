@@ -90,9 +90,19 @@ export type RefillStatus = {
 export function refillStatus(): Promise<RefillStatus> {
   return call<RefillStatus>("refill_status");
 }
+/** 手动跑一轮的结果。带真实请求数与池子前后：刷新不能只说"好了"，要说花了多少配额。 */
+export type RefillRun = {
+  channel: string;
+  inserted: number;
+  core_used: number;
+  search_used: number;
+  note: string;
+  pool_before: number;
+  pool_after: number;
+};
 /** 手动跑一轮（后台线程本来就会自己跑，这个是"我现在就想看更多"的那条路） */
-export function refillNow(): Promise<{ channel: string; inserted: number; note: string }> {
-  return call<{ channel: string; inserted: number; note: string }>("refill_now");
+export function refillNow(): Promise<RefillRun> {
+  return call<RefillRun>("refill_now");
 }
 
 export type Account = {
