@@ -218,13 +218,17 @@ impl Http {
 }
 
 // ---------------------------------------------------------------- 库
+/// 建表只做一次。以前每次 open_db 都跑一遍 init_db，而界面一屏就要开上百次连接
+/// （每张卡的曝光上报各一次命令），等于把 DDL 重复执行上百遍。
+static DB_INIT: std::sync::Once = std::sync::Once::new();
+
 pub fn open_db() -> Result<Connection, String> {
   let dir = std::env::var("LOCALAPPDATA").or_else(|_| std::env::var("APPDATA")).unwrap_or_else(|_| ".".into());
   let dbdir = format!("{dir}\\gh-feed");
   std::fs::create_dir_all(&dbdir).ok();
   let path = format!("{dbdir}\\gh-feed.db");
   let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-  init_db(&conn);
+  DB_INIT.call_once(|| init_db(&conn));
   Ok(conn)
 }
 
@@ -514,19 +518,8 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
   }
   };
 
-  {
-    let mut wstmt = conn
-      .prepare("SELECT total FROM star_week WHERE repo_id=?1 ORDER BY week DESC LIMIT 8")
-      .unwrap();
-    let ids: Vec<i64> = cards.iter().map(|c| c.id).collect();
-    for (i, id) in ids.iter().enumerate() {
-      let w = wstmt
-        .query_map(params![id], |r| r.get::<_, i64>(0))
-        .map(|rows| rows.filter_map(|x| x.ok()).collect())
-        .unwrap_or_default();
-      cards[i].weeks = w;
-    }
-  }
+  // weeks 以前在这里对**全池**逐行查（5714 次 round-trip，实测 515ms），但它只是界面用来画
+  // 周峰值的显示字段，不参与排序 —— 现在挪到分页之后，一次批量拿（同数据实测 8.6ms）。
 
   if !login.is_empty() {
     // profile 与 social 都走 feed_hit：前者是"词表命中"，后者是"我信任的人收藏了它"
@@ -589,19 +582,7 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
       }
     }
   }
-  // 收藏状态要带出去：收藏页的徽标和"这条已经收过"都靠它
-  {
-    let ids: Vec<i64> = if let Ok(mut st) = conn.prepare("SELECT repo_id FROM saved") {
-      st.query_map([], |r| r.get::<_, i64>(0)).map(|x| x.filter_map(|y| y.ok()).collect()).unwrap_or_default()
-    } else { Vec::new() };
-    let set: std::collections::HashSet<i64> = ids.into_iter().collect();
-    let seen: std::collections::HashSet<i64> = if let Ok(mut st2) = conn.prepare("SELECT DISTINCT repo_id FROM impression") {
-      st2.query_map([], |r| r.get::<_, i64>(0))
-        .map(|x| x.filter_map(|y| y.ok()).collect())
-        .unwrap_or_default()
-    } else { Default::default() };
-    for c in cards.iter_mut() { c.saved = set.contains(&c.id); c.seen = seen.contains(&c.id); }
-  }
+  // 收藏/看过两个标记同样只是显示用的，挪到分页之后（mark_saved_seen）。
   // ---------------------------------------------------------------- 通道槽位（2026-10-06）
   //
   // 为什么不能只按总分排：hot 的候选有斜率，基础分天然 0.4~0.6；而画像与相似用户的候选
@@ -633,8 +614,10 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
     };
     buckets[i].push(c);
   }
+  // 升序排，pop() 从尾部拿最大分的那个 —— 这样"取下一个"是 O(1)。
+  // （旧写法是排好序再对 Vec 头部 remove(0)，全池 5714 条就是千万次元素搬移。）
   for b in buckets.iter_mut() {
-    b.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    b.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap());
   }
   let total: usize = buckets.iter().map(|b| b.len()).sum();
   let slot_of = |name: &str| match name {
@@ -658,23 +641,111 @@ pub fn load_feed(conn: &Connection, login: &str, limit: i64, offset: i64) -> Vec
         }
       };
     }
-    interleaved.push(buckets[want].remove(0));
+    if let Some(c) = buckets[want].pop() {
+      interleaved.push(c);
+    }
     k += 1;
   }
-  // 打散：同一 owner 不连续出现两次
+  // 打散：同一 owner 不连续出现两次。顺序扫一遍，撞车的先搁进 carry 等后面的项插进来；
+  // carry 在真实数据里始终很短（同一 owner 连着一大串的情况极少），所以整体是 O(n)。
+  // 用宏而不是闭包：判断"能不能插"要读最近两个 owner，取用又要改它们，闭包过不了借用检查。
+  macro_rules! owner { ($c:expr) => { $c.full_name.split('/').next().unwrap_or("") } }
   let mut out: Vec<Card> = Vec::with_capacity(interleaved.len());
-  let mut buf = interleaved;
-  while !buf.is_empty() {
-    let pos = buf
-      .iter()
-      .position(|c| {
-        out.iter().rev().take(2).all(|o| o.full_name.split('/').next() != c.full_name.split('/').next())
-      })
-      .unwrap_or(0);
-    out.push(buf.remove(pos));
+  let mut carry: Vec<Card> = Vec::new();
+  let mut p1 = String::new(); // 上一个 owner
+  let mut p2 = String::new(); // 上上个
+  macro_rules! fits { ($c:expr) => { owner!($c) != p1 && owner!($c) != p2 } }
+  macro_rules! take_out {
+    ($c:expr) => {{
+      let card = $c;
+      p2 = std::mem::take(&mut p1);
+      p1 = owner!(&card).to_string();
+      out.push(card);
+    }};
   }
+  for c in interleaved {
+    if fits!(&c) {
+      take_out!(c);
+      continue;
+    }
+    // 自己排不进去，先看队列里有没有能插的（先到先服务），再把自己搁进队列
+    if let Some(j) = carry.iter().position(|x| fits!(x)) {
+      let y = carry.remove(j);
+      take_out!(y);
+    }
+    carry.push(c);
+  }
+  while !carry.is_empty() {
+    // 收尾：宁可连着两个同 owner，也不能把内容弄丢
+    let j = carry.iter().position(|x| fits!(x)).unwrap_or(0);
+    let y = carry.remove(j);
+    take_out!(y);
+  }
+
+  // 分页先做，再只给这一页补"只有界面要用的字段"：weeks / saved / seen 都不参与排序。
   let end = (offset + limit).max(0) as usize;
-  out.into_iter().skip(offset.max(0) as usize).take(end.saturating_sub(offset.max(0) as usize)).collect()
+  let mut page: Vec<Card> =
+    out.into_iter().skip(offset.max(0) as usize).take(end.saturating_sub(offset.max(0) as usize)).collect();
+  fill_weeks(conn, &mut page);
+  mark_saved_seen(conn, &mut page);
+  page
+}
+
+/// 一次查询拿回这一页的所有周桶。以前是全池逐行查：5714 次 round-trip 实测 515ms，
+/// 同样的数据一次批量查是 8.6ms。一页最多 100 个 id，直接展开成 IN (?,?,...)。
+fn fill_weeks(conn: &Connection, cards: &mut [Card]) {
+  if cards.is_empty() {
+    return;
+  }
+  let ids: Vec<i64> = cards.iter().map(|c| c.id).collect();
+  let ph: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+  let sql = format!(
+    "SELECT repo_id, total FROM star_week WHERE repo_id IN ({}) ORDER BY repo_id, week DESC",
+    ph.join(",")
+  );
+  let mut map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+  if let Ok(mut st) = conn.prepare(&sql) {
+    if let Ok(rows) = st.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+      Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+    }) {
+      for (id, total) in rows.flatten() {
+        let e = map.entry(id).or_default();
+        if e.len() < 8 {
+          e.push(total);
+        }
+      }
+    }
+  }
+  for c in cards.iter_mut() {
+    c.weeks = map.remove(&c.id).unwrap_or_default();
+  }
+}
+
+/// 收藏与"看过了"两个徽标：只对这一页算，不预先给全池打标。
+fn mark_saved_seen(conn: &Connection, cards: &mut [Card]) {
+  if cards.is_empty() {
+    return;
+  }
+  let want: std::collections::HashSet<i64> = cards.iter().map(|c| c.id).collect();
+  let has = |sql: &str| -> std::collections::HashSet<i64> {
+    let mut s = std::collections::HashSet::new();
+    if let Ok(mut st) = conn.prepare(sql) {
+      if let Ok(rows) = st.query_map([], |r| r.get::<_, i64>(0)) {
+        for id in rows.flatten() {
+          if want.contains(&id) {
+            s.insert(id);
+          }
+        }
+      }
+    }
+    s
+  };
+  let saved = has("SELECT repo_id FROM saved");
+  let seen = has("SELECT DISTINCT repo_id FROM impression");
+  for c in cards.iter_mut() {
+    c.saved = saved.contains(&c.id);
+    c.seen = seen.contains(&c.id);
+  }
 }
 
 pub fn pool_size(conn: &Connection) -> i64 {
@@ -1327,6 +1398,30 @@ pub fn log_impression(conn: &Connection, repo_id: i64, slot: i64, channel: &str,
     Ok(_) => Ok(conn.last_insert_rowid()),
     Err(e) => Err(e.to_string()),
   }
+}
+
+/// 一条曝光（界面攒着批量发）。
+#[derive(serde::Deserialize)]
+pub struct Imp {
+  pub repo_id: i64,
+  pub slot: i64,
+  pub channel: String,
+}
+
+/// 批量曝光：一屏 100 张卡逐条上报就是 100 次 IPC + 100 次开连接，攒成一批发。
+/// 语句只 prepare 一次反复用（prepare_cached），去重仍然靠 impression 的 UNIQUE(repo_id, session)，语义没变。
+pub fn log_impressions(conn: &Connection, items: &[Imp], session: &str) -> Result<usize, String> {
+  ensure_event_tables(conn);
+  let ts = now_s();
+  let mut st = conn
+    .prepare_cached("INSERT OR IGNORE INTO impression(repo_id, slot, channel, ts, session) VALUES(?1,?2,?3,?4,?5)")
+    .map_err(|e| e.to_string())?;
+  let mut n = 0usize;
+  for it in items {
+    st.execute(params![it.repo_id, it.slot, it.channel, ts, session]).map_err(|e| e.to_string())?;
+    n += 1;
+  }
+  Ok(n)
 }
 
 /// 曝光去重后的真实触达数

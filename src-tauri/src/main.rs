@@ -2,27 +2,49 @@
 // 注意只在非 debug 下生效 —— 开发时要留着它看 panic 信息。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+/// 阻塞活搬到 Tauri 的阻塞线程池上跑。
+///
+/// 为什么需要：Tauri 的**同步** command 是在主线程执行的，所以一次慢查询 = 整窗冻结
+/// （发现页以前一次 get_channel 要 1.04 秒，滚一屏能冻好几下，就是"完全不可用"的来源）。
+/// 查询本身也已经修过（N+1 与 O(n²) 搬桶），两边都要：慢的时候不能卡界面，界面也别制造慢。
+/// 用法：`bg!({ ...body 返回 Result<T,String>... })`，整个宏表达式就是命令的返回值。
+macro_rules! bg {
+  ($body:block) => {{
+    // spawn_blocking 的返回是 Result<Result<T,E>, JoinError>，这里把它摊平成命令要的 Result<T,E>
+    match tauri::async_runtime::spawn_blocking(move || $body).await {
+      Ok(v) => v,
+      Err(e) => Err(format!("后台任务没跑起来：{e}")),
+    }
+  }};
+}
+
 mod feed;
 
 /// 界面拿榜单：每次调用都现读 SQLite，所以刷新数据不需要重编译应用。
 #[tauri::command]
-fn get_feed(limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
-  let conn = feed::open_db()?;
-  Ok(feed::load_feed(&conn, &feed::current_login(&conn), limit.unwrap_or(40), offset.unwrap_or(0)))
+async fn get_feed(limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    Ok(feed::load_feed(&conn, &feed::current_login(&conn), limit.unwrap_or(40), offset.unwrap_or(0)))
+  })
 }
 
 #[tauri::command]
-fn feed_stats() -> Result<serde_json::Value, String> {
-  let conn = feed::open_db()?;
-  let n: i64 = conn
-    .query_row("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL", [], |r| r.get(0))
-    .unwrap_or(0);
-  let terms = feed::profile_terms(&conn, &feed::current_login(&conn));
-  Ok(serde_json::json!({
-    "pool": feed::pool_size(&conn), "ranked": n,
-    "login": feed::current_login(&conn),
-    "terms": terms.iter().map(|(t, w)| format!("{t} {w:.2}")).collect::<Vec<_>>()
-  }))
+async fn feed_stats() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    let n: i64 = conn
+      .query_row("SELECT COUNT(1) FROM repo WHERE slope IS NOT NULL", [], |r| r.get(0))
+      .unwrap_or(0);
+    let terms = feed::profile_terms(&conn, &feed::current_login(&conn));
+    Ok(serde_json::json!({
+      "pool": feed::pool_size(&conn), "ranked": n,
+      "login": feed::current_login(&conn),
+      "terms": terms.iter().map(|(t, w)| format!("{t} {w:.2}")).collect::<Vec<_>>()
+    }))
+  })
 }
 
 #[tauri::command]
@@ -55,23 +77,32 @@ async fn run_profile(login: String, pages: i64) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn log_impression(repo_id: i64, slot: i64, channel: String, session: String) -> Result<i64, String> {
-  let conn = feed::open_db()?;
-  feed::log_impression(&conn, repo_id, slot, &channel, &session)
+async fn log_impressions(items: Vec<feed::Imp>, session: String) -> Result<usize, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    feed::log_impressions(&conn, &items, &session)
+  })
 }
 
 #[tauri::command]
-fn log_event(kind: String, repo_id: i64, payload: Option<String>, impression_id: Option<i64>) -> Result<serde_json::Value, String> {
-  let conn = feed::open_db()?;
-  feed::log_event(&conn, &kind, repo_id, payload.clone(), impression_id)?;
-  let learned = feed::apply_feedback(&conn, &feed::current_login(&conn), repo_id, &kind, payload.as_deref());
-  Ok(serde_json::json!({ "learned": learned }))
+async fn log_event(kind: String, repo_id: i64, payload: Option<String>, impression_id: Option<i64>) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    feed::log_event(&conn, &kind, repo_id, payload.clone(), impression_id)?;
+    let learned = feed::apply_feedback(&conn, &feed::current_login(&conn), repo_id, &kind, payload.as_deref());
+    Ok(serde_json::json!({ "learned": learned }))
+  })
 }
 
 #[tauri::command]
-fn get_stats() -> Result<serde_json::Value, String> {
-  let conn = feed::open_db()?;
-  Ok(feed::stats(&conn))
+async fn get_stats() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    Ok(feed::stats(&conn))
+  })
 }
 
 /// 界面里的 JS 把关键事件写进这个文件，否则我隔着 WebView 什么都看不见
@@ -85,15 +116,21 @@ fn js_log(msg: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn calibrate_now() -> Result<String, String> {
-  let conn = feed::open_db()?;
-  feed::calibrate(&conn)
+async fn calibrate_now() -> Result<String, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    feed::calibrate(&conn)
+  })
 }
 
 #[tauri::command]
-fn get_channel(channel: String, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
-  let conn = feed::open_db()?;
-  Ok(feed::load_channel(&conn, &feed::current_login(&conn), &channel, limit.unwrap_or(40), offset.unwrap_or(0)))
+async fn get_channel(channel: String, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<feed::Card>, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    Ok(feed::load_channel(&conn, &feed::current_login(&conn), &channel, limit.unwrap_or(40), offset.unwrap_or(0)))
+  })
 }
 
 #[tauri::command]
@@ -119,21 +156,30 @@ async fn do_search(query: String) -> Result<String, String> {
 fn settings_json() -> Result<serde_json::Value, String> { let c = feed::open_db()?; Ok(feed::get_settings(&c)) }
 
 #[tauri::command]
-fn set_setting_cmd(key: String, value: String) -> Result<(), String> {
-  let c = feed::open_db()?; feed::set_setting(&c, &key, &value)
+async fn set_setting_cmd(key: String, value: String) -> Result<(), String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?; feed::set_setting(&c, &key, &value)
+  })
 }
 
 #[tauri::command]
-fn do_translate(texts: Vec<String>) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let s = feed::get_settings(&c);
-  Ok(feed::translate(&c, s["translate_url"].as_str().unwrap_or(""), s["lang"].as_str().unwrap_or("zh-CN"), &texts))
+async fn do_translate(texts: Vec<String>) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let s = feed::get_settings(&c);
+    Ok(feed::translate(&c, s["translate_url"].as_str().unwrap_or(""), s["lang"].as_str().unwrap_or("zh-CN"), &texts))
+  })
 }
 
 #[tauri::command]
-fn get_detail(repo_id: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  Ok(feed::repo_detail(&c, repo_id, &mut |s| println!("{s}")))
+async fn get_detail(repo_id: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    Ok(feed::repo_detail(&c, repo_id, &mut |s| println!("{s}")))
+  })
 }
 
 #[tauri::command]
@@ -147,51 +193,66 @@ fn open_url(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn auth_status() -> Result<serde_json::Value, String> {
-  // Rust 侧的话也写进同一份磁盘日志，否则 GUI 里 println 出来的东西没人看得见
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::auth_status(&mut sink)
+async fn auth_status() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    // Rust 侧的话也写进同一份磁盘日志，否则 GUI 里 println 出来的东西没人看得见
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::auth_status(&mut sink)
+  })
 }
 
 #[tauri::command]
-fn build_my_profile(pages: Option<i64>) -> Result<String, String> {
-  let conn = feed::open_db()?;
-  // 必须以"真的带着 token 的那个账号"的身份来建。用 active_login() 会退回 profile_term 里的
-  // 词表归属，而那是原型阶段借来的公开账号——用户点"按我自己的口味建画像"却建出陌生人的画像，
-  // 而且匿名态读公开的 starred 连报错都不会有，错得很安静。
-  let acct = feed::current_acct(&conn).ok_or("还没有带 token 的账号：先去「设置 → 账号」登录")?;
-  let login = acct.login;
-  let mut log = String::new();
-  let mut sink = |s: String| { let _ = js_log(s); };
-  let r1 = feed::build_profile(&conn, &login, pages.unwrap_or(5), &mut sink);
-  log.push_str(&r1?);
-  log.push('\n');
-  let r2 = feed::run_profile_search(&conn, &login, &mut sink);
-  log.push_str(&r2?);
-  log.push('\n');
-  let r3 = feed::measure_top(&conn, 40, &mut sink);
-  log.push_str(&r3?);
-  log.push('\n');
-  let _ = feed::set_setting(&conn, "active_login", &login);
-  Ok(log)
+async fn build_my_profile(pages: Option<i64>) -> Result<String, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let conn = feed::open_db()?;
+    // 必须以"真的带着 token 的那个账号"的身份来建。用 active_login() 会退回 profile_term 里的
+    // 词表归属，而那是原型阶段借来的公开账号——用户点"按我自己的口味建画像"却建出陌生人的画像，
+    // 而且匿名态读公开的 starred 连报错都不会有，错得很安静。
+    let acct = feed::current_acct(&conn).ok_or("还没有带 token 的账号：先去「设置 → 账号」登录")?;
+    let login = acct.login;
+    let mut log = String::new();
+    let mut sink = |s: String| { let _ = js_log(s); };
+    let r1 = feed::build_profile(&conn, &login, pages.unwrap_or(5), &mut sink);
+    log.push_str(&r1?);
+    log.push('\n');
+    let r2 = feed::run_profile_search(&conn, &login, &mut sink);
+    log.push_str(&r2?);
+    log.push('\n');
+    let r3 = feed::measure_top(&conn, 40, &mut sink);
+    log.push_str(&r3?);
+    log.push('\n');
+    let _ = feed::set_setting(&conn, "active_login", &login);
+    Ok(log)
+  })
 }
 
 #[tauri::command]
-fn login_start(client_id: String, scopes: Option<String>) -> Result<serde_json::Value, String> {
-  feed::device_start(&client_id, scopes.unwrap_or_else(|| "read:user public_repo".into()).as_str())
+async fn login_start(client_id: String, scopes: Option<String>) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    feed::device_start(&client_id, scopes.unwrap_or_else(|| "read:user public_repo".into()).as_str())
+  })
 }
 
 #[tauri::command]
-fn login_poll(client_id: String, device_code: String) -> Result<serde_json::Value, String> {
-  feed::device_poll(&client_id, &device_code)
+async fn login_poll(client_id: String, device_code: String) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    feed::device_poll(&client_id, &device_code)
+  })
 }
 
 #[tauri::command]
 fn accounts_list() -> serde_json::Value { feed::accounts_json() }
 
 #[tauri::command]
-fn account_activate(login: String) -> Result<(), String> {
-  let c = feed::open_db()?; feed::set_setting(&c, "active_login", &login)
+async fn account_activate(login: String) -> Result<(), String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?; feed::set_setting(&c, "active_login", &login)
+  })
 }
 
 #[tauri::command]
@@ -202,83 +263,116 @@ fn add_pat(token: String) -> Result<serde_json::Value, String> { feed::add_pat_a
 
 /// "我的"这一页的数据：本地读，不发任何请求
 #[tauri::command]
-fn me_report() -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  Ok(feed::me_report(&c))
+async fn me_report() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    Ok(feed::me_report(&c))
+  })
 }
 
 /// GitHub 侧的"我"：头像简介、公开仓库、近 90 天公开事件。要发请求，故带缓存
 #[tauri::command]
-fn my_profile() -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::my_profile(&c, &mut sink)
+async fn my_profile() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::my_profile(&c, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn get_counts() -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  Ok(feed::channel_counts(&c))
+async fn get_counts() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    Ok(feed::channel_counts(&c))
+  })
 }
 
 // ---- 仓库视图的三条命令：树 / 单文件 / issue 与 PR
 // 三条都带 emit 落到 ui.log，因为取数失败在界面上只会表现成"空"，
 // 没有日志就分不清是配额、分支名还是仓库本身是空的。
 #[tauri::command]
-fn repo_tree(repo_id: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::repo_tree(&c, repo_id, &mut sink)
+async fn repo_tree(repo_id: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::repo_tree(&c, repo_id, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn repo_file_read(repo_id: i64, path: String, mode: Option<String>) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::repo_file_read(&c, repo_id, &path, mode.as_deref().unwrap_or("raw"), &mut sink)
+async fn repo_file_read(repo_id: i64, path: String, mode: Option<String>) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::repo_file_read(&c, repo_id, &path, mode.as_deref().unwrap_or("raw"), &mut sink)
+  })
 }
 
 #[tauri::command]
-fn repo_list(repo_id: i64, kind: String) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::repo_list(&c, repo_id, &kind, &mut sink)
+async fn repo_list(repo_id: i64, kind: String) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::repo_list(&c, repo_id, &kind, &mut sink)
+  })
 }
 
 // ---- 应用内的 issue / PR / Actions：点开详情不再甩到系统浏览器（他 2026-10-06 明确要求）
 #[tauri::command]
-fn issue_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::issue_detail(&c, repo_id, number, &mut sink)
+async fn issue_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::issue_detail(&c, repo_id, number, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn issue_comments(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::issue_comments(&c, repo_id, number, &mut sink)
+async fn issue_comments(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::issue_comments(&c, repo_id, number, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn pr_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::pr_detail(&c, repo_id, number, &mut sink)
+async fn pr_detail(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::pr_detail(&c, repo_id, number, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn pr_files(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::pr_files(&c, repo_id, number, &mut sink)
+async fn pr_files(repo_id: i64, number: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::pr_files(&c, repo_id, number, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn actions_runs(repo_id: i64) -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::actions_runs(&c, repo_id, &mut sink)
+async fn actions_runs(repo_id: i64) -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::actions_runs(&c, repo_id, &mut sink)
+  })
 }
 
 /// 顶部原生菜单：应用 / 编辑。
@@ -326,16 +420,22 @@ fn build_menu(app: &tauri::App) -> tauri::Result<()> {
 
 /// 静默补货：手动触发一轮（设置页那个按钮）。平时是后台线程自己在跑，见 spawn_refill。
 #[tauri::command]
-fn refill_now() -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  let mut sink = |s: String| { let _ = js_log(s); };
-  feed::refill(&c, &mut sink)
+async fn refill_now() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    let mut sink = |s: String| { let _ = js_log(s); };
+    feed::refill(&c, &mut sink)
+  })
 }
 
 #[tauri::command]
-fn refill_status() -> Result<serde_json::Value, String> {
-  let c = feed::open_db()?;
-  Ok(feed::refill_status(&c))
+async fn refill_status() -> Result<serde_json::Value, String> {
+  // 取数与打分都是阻塞活：扔到阻塞线程池，别把界面冻住（见 bg! 的注释）
+  bg!({
+    let c = feed::open_db()?;
+    Ok(feed::refill_status(&c))
+  })
 }
 
 /// 后台补货线程：启动后 25 秒跑一次（两小步：画像 + 热度，让个性化先落地），
@@ -381,7 +481,7 @@ fn main() {
       spawn_refill();
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impression, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list, issue_detail, issue_comments, pr_detail, pr_files, actions_runs, refill_now, refill_status])
+    .invoke_handler(tauri::generate_handler![get_feed, feed_stats, run_collect, run_profile, log_impressions, log_event, get_stats, js_log, calibrate_now, get_channel, do_explore, do_search, settings_json, set_setting_cmd, do_translate, get_detail, open_in_app_window, open_url, auth_status, build_my_profile, login_start, login_poll, accounts_list, account_activate, account_remove, add_pat, get_counts, me_report, my_profile, repo_tree, repo_file_read, repo_list, issue_detail, issue_comments, pr_detail, pr_files, actions_runs, refill_now, refill_status])
     .run(tauri::generate_context!())
     .expect("启动 Tauri 应用失败");
 }

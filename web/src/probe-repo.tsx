@@ -440,6 +440,11 @@ async function run() {
       notices.some((m) => m.includes("补了一轮：通道 profile 新增 7 条") && m.includes("core 8 / search 6") && m.includes("4762 → 4769")),
     calls.slice(-3).join(",")
   );
+  ok(
+    "曝光是攒批发的：一屏卡片最多一次 log_impressions，而且不再发单条的那个命令",
+    calls.filter((c) => c === "log_impressions:").length <= 1 && !calls.some((c) => c === "log_impression:"),
+    calls.filter((c) => c.startsWith("log_impression")).join("|")
+  );
 
   // ---- 统计页的补货面板（换一个 root 渲染，不再碰 DetailView）
   const box2 = document.createElement("div");

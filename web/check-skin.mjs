@@ -41,6 +41,7 @@ const collectrs = existsSync(join(web, "..", "src-tauri", "src", "bin", "collect
 const cardx = readFileSync(join(web, "src", "components", "RepoCard.tsx"), "utf8");
 const feedview = readFileSync(join(web, "src", "views", "FeedView.tsx"), "utf8");
 const probeSrc = readFileSync(join(web, "src", "probe-repo.tsx"), "utf8");
+const exposure = readFileSync(join(web, "src", "lib", "exposure.ts"), "utf8");
 
 // 逐页：必须还在的信息块（钉可见文字，不钉实现细节）+ 不许回来的摆法
 const PAGES = [
@@ -410,6 +411,35 @@ const CHECKS = [
       /fetchPage\(0\)\.then\(\(\) => r\)/.test(feedview) && /补了一轮：通道/.test(feedview) &&
       /只重读了本机已有的内容/.test(feedview) && /刷新中/.test(feedview),
   },
+  // ---- 2026-10-07 他说"整体使用感非常非常卡顿，完全不可用"：这四条钉住修的地方
+  {
+    id: "perf-no-n-plus-one",
+    what: "load_feed 不再对全池逐行查 weeks：fill_weeks 一次 IN 批量，且只在分页后给这一页补（saved/seen 同理）",
+    pass: /fn fill_weeks/.test(rust) && /ORDER BY repo_id, week DESC/.test(rust) &&
+      /fn mark_saved_seen/.test(rust) && /fill_weeks\(conn, &mut page\)/.test(rust) &&
+      /mark_saved_seen\(conn, &mut page\)/.test(rust) &&
+      !/for \(i, id\) in ids\.iter\(\)\.enumerate\(\)/.test(rust),
+  },
+  {
+    id: "perf-commands-off-main",
+    what: "阻塞活不在主线程上：bg! 宏走 spawn_blocking，读榜/详情/文件命令都是 async fn",
+    pass: /macro_rules! bg/.test(mainrs) && /spawn_blocking/.test(mainrs) &&
+      /async fn get_channel/.test(mainrs) && /async fn get_detail/.test(mainrs) &&
+      /async fn repo_file_read/.test(mainrs) && /async fn log_impressions/.test(mainrs),
+  },
+  {
+    id: "perf-impression-batch",
+    what: "曝光攒批上报（一屏 100 张卡不能发 100 次 IPC），且关窗前会倒空队列",
+    pass: /log_impressions/.test(exposure) && /FLUSH_AT/.test(exposure) && /beforeunload/.test(exposure) &&
+      !/call\("log_impression"/.test(exposure) &&
+      /pub struct Imp/.test(rust) && /prepare_cached\("INSERT OR IGNORE INTO impression/.test(rust) &&
+      /generate_handler!\[[^\]]*log_impressions,/.test(mainrs) && !/ log_impression,/.test(mainrs),
+  },
+  {
+    id: "perf-init-once",
+    what: "建表每进程只跑一次（以前每条命令都 open_db + init_db，一屏上百次）",
+    pass: /static DB_INIT: std::sync::Once/.test(rust) && /DB_INIT\.call_once/.test(rust),
+  },
 ];
 
 let pass = 0;
@@ -472,6 +502,11 @@ if (liveArg) {
     ]);
     try {
       const t = raw(["tree", String(id)]);
+      const bm = raw(["bench", "3"]);
+      LIVE.push([
+        `榜单查询同进程计时：一页 ${bm.v?.rows ?? 0} 条，最慢 ${bm.v?.worst_ms ?? "?"}ms（门槛 250ms；修之前实测 1040ms）`,
+        !!bm.v && bm.v.rows > 0 && bm.v.worst_ms < 250,
+      ]);
       LIVE.push(["tree 拿得到条目", !!t.v && t.v.count > 0 && t.v.entries.every((e) => typeof e.path === "string" && typeof e.dir === "boolean") && !!t.v.branch]);
       const f0 = t.v.entries.find((e) => !e.dir && /\.md$/i.test(e.path)) || t.v.entries.find((e) => !e.dir);
       const f = raw(["file", String(id), f0.path]);

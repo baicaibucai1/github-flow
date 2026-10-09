@@ -7,6 +7,36 @@ import { call, log, SESSION } from "./bridge";
  * (repo_id, session) 在 Rust 侧 UNIQUE，重复上报会被吞掉，所以这里只管本会话去重。
  */
 const DWELL_MS = 1000;
+/** 攒批上报的窗口与阈值：一屏 100 张卡逐条发就是 100 次 IPC，界面滑起来就卡。 */
+const FLUSH_MS = 1200;
+const FLUSH_AT = 20;
+
+type Imp = { repoId: number; slot: number; channel: string };
+const queue: Imp[] = [];
+let flushTimer = 0;
+
+function flushImpressions() {
+  flushTimer = 0;
+  if (!queue.length) return;
+  const items = queue.splice(0, queue.length);
+  call("log_impressions", { items, session: SESSION }).catch((e) => log("impression FAIL " + e));
+}
+
+function pushImpression(it: Imp) {
+  queue.push(it);
+  if (queue.length >= FLUSH_AT) {
+    if (flushTimer) window.clearTimeout(flushTimer);
+    flushImpressions();
+    return;
+  }
+  if (!flushTimer) flushTimer = window.setTimeout(flushImpressions, FLUSH_MS);
+}
+
+// 关窗口前把队列倒出去，否则最后 1.2 秒的曝光会丢
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", flushImpressions);
+  window.addEventListener("pagehide", flushImpressions);
+}
 
 type Handler = (visible: boolean) => void;
 
@@ -46,12 +76,7 @@ export function useExposure(meta: {
         timer = window.setTimeout(() => {
           timer = 0;
           counted = true;
-          call("log_impression", {
-            repoId: meta.id,
-            slot: meta.slot,
-            channel: meta.channel,
-            session: SESSION,
-          }).catch((e) => log("impression FAIL " + e));
+          pushImpression({ repoId: meta.id, slot: meta.slot, channel: meta.channel });
         }, DWELL_MS);
       } else if (timer) {
         window.clearTimeout(timer);

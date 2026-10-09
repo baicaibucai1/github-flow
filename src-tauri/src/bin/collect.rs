@@ -188,6 +188,26 @@ fn main() {
     println!("RAW {}", serde_json::json!({ "html": out, "fixed": n }).to_string());
     return;
   }
+  // ---- 性能门槛：榜单查询同进程计时。
+  // 必须是同进程：collect.exe 每次冷启要 ~60ms（296MB 的 debug 产物被 Defender 扫），
+  // 用外部 time 会把启动开销算进"查询耗时"，那个数会骗人。
+  if args.get(1).map(|s| s.as_str()) == Some("bench") {
+    let n: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3);
+    let conn = feed::open_db().expect("打不开数据库");
+    let login = feed::current_login(&conn);
+    let (mut best, mut worst, mut rows) = (u128::MAX, 0u128, 0usize);
+    for _ in 0..n {
+      let t0 = std::time::Instant::now();
+      let cards = feed::load_feed(&conn, &login, 100, 0);
+      let ms = t0.elapsed().as_millis();
+      rows = cards.len();
+      best = best.min(ms);
+      worst = worst.max(ms);
+    }
+    println!("[bench] load_feed 一页 {rows} 条 × {n} 次：最快 {best}ms，最慢 {worst}ms");
+    println!("RAW {}", serde_json::json!({ "n": n, "rows": rows, "best_ms": best, "worst_ms": worst }));
+    return;
+  }
   // ---- 翻译：先命令行验一次，才分得清"没翻"是缓存没命中、额度被打满，还是代码把失败当结果存了
   // 用法：collect translate [--url=https://坏掉的主机] <文本...>
   // RAW 里带 poisoned（库里 zh 与原文一样的行数），那条就是污染缓存的证据。
