@@ -440,6 +440,11 @@ const CHECKS = [
     what: "建表每进程只跑一次（以前每条命令都 open_db + init_db，一屏上百次）",
     pass: /static DB_INIT: std::sync::Once/.test(rust) && /DB_INIT\.call_once/.test(rust),
   },
+  {
+    id: "impression-camel-keys",
+    what: "Imp 带 rename_all=camelCase：Tauri 不转换结构体字段名，漏了会整批曝光静默失败（实测真踩过，日志里一排 missing field repo_id）",
+    pass: /rename_all = "camelCase"\)\]\s*pub struct Imp/.test(rust),
+  },
 ];
 
 let pass = 0;

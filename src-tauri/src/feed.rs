@@ -1401,7 +1401,12 @@ pub fn log_impression(conn: &Connection, repo_id: i64, slot: i64, channel: &str,
 }
 
 /// 一条曝光（界面攒着批量发）。
+///
+/// ⚠️ `rename_all` 不能省：Tauri 只把**命令参数名**从 camelCase 转成 snake_case，
+/// 结构体里的字段不归它管。界面上报的是 `repoId`，不加这行就会报
+/// "missing field `repo_id`"，整批曝光静默丢掉（实测踩过，日志里一排 FAIL）。
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Imp {
   pub repo_id: i64,
   pub slot: i64,
