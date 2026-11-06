@@ -106,6 +106,12 @@ mod tests {
             license: "MIT".into(),
             score: 0.0,
             saved: false,
+            readme_title: String::new(),
+            readme_head: String::new(),
+            cover_url: String::new(),
+            cover_kind: String::new(),
+            cover_w: 0,
+            cover_h: 0,
         }
     }
 

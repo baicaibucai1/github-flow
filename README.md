@@ -5,8 +5,11 @@
 ## 现在这一版有什么
 
 - **3500 个真实项目，随程序一起分发**。双击就能刷，不需要登录、不需要联网、不需要等采集。
+- **卡片头部就是 README 首屏**。有首图就铺图，没图就把 README 的第一段按文档样式排出来，
+  底下留一行极小的 `README` 标明出处。图片加载失败会自动退回文字形态，
+  断网时看到的是「没有插图」，而不是一片空白。
 - **瀑布流首屏**。四个星数档位轮转出现，不会一屏全是 pytorch 这种人人都知道的仓库。
-- **详情抽屉**。stars / forks / issues / 许可 / 话题，一键跳 GitHub。
+- **详情抽屉**。抬头同样用首图/首段，下面是 stars / forks / issues / 许可 / 话题，一键跳 GitHub。
 - **收藏**。存在本地 SQLite 里，重启不丢。
 
 ## 明确没有的（这一版故意不做）
@@ -45,8 +48,17 @@ FLOW_SELFTEST="C:\path\selftest.json" ./target/release/flow.exe
 ```bash
 export FLOW_GH_TOKEN=<你的令牌>
 
-# 采集 3500 条（分三档星数区间，约 5 分钟）
+# 采集 3500 条（按语言 × 星数分档，约 5 分钟）
 ./target/release/flowctl harvest --db build/seed.db --target 3500
+
+# 逐仓库补 README 首屏（标题 / 首段 / 首图），带限速与断点续跑
+./target/release/flowctl enrich --db build/seed.db
+
+# 改了抽取规则想重跑
+./target/release/flowctl enrich --db build/seed.db --redo
+
+# 看单个仓库抽出来什么
+./target/release/flowctl readme --repo tauri-apps/tauri
 
 # 看分布与前十条
 ./target/release/flowctl stats --db build/seed.db
@@ -66,9 +78,11 @@ sqlite3 build/seed.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM INTO 'app/seed.db
 ```
 core/                所有逻辑，与界面无关
   src/model.rs       领域类型，扁平：一行 SQLite ↔ 一个结构体 ↔ 一张卡片
-  src/store.rs       存储 + 排序取材（含分档轮转）
+  src/store.rs       存储 + 排序取材（含分档轮转）+ 老库补列
   src/rank.rs        打分，纯函数，有单测
-  src/source.rs      唯一的出网口：搜索、限速、README
+  src/readme.rs      从 README 原文里抽首屏（标题 / 首段 / 首图）
+  src/image.rs       只从文件头读图片宽高，不引编解码器
+  src/source.rs      唯一的出网口：搜索、限速、README、图片探测
   src/bin/flowctl.rs 开发期命令行
 app/                 桌面外壳：只算数据目录、落种子库、转发命令
   src/main.rs        没有任何业务逻辑，也没有一句 SQL
@@ -99,6 +113,24 @@ score = 0.45 × 热度 + 0.55 × 新鲜度
 
 取材时按星数分四档（<1k / 1k–10k / 10k–50k / >50k）轮转，同作者不相邻。
 纯按分数排出来的东西首屏一定是巨无霸，那是榜单不是发现。
+
+## 卡片头部为什么要读 README
+
+信息流第一屏决定用户要不要点进去。只放色块加首字母，扫过去全是一个形状，什么也看不出来；
+直接拿 GitHub 的 `og:image` 又是「卡中卡」——一张卡片里套一张带边框的卡片，而且那张图本身就是
+头像 + 简介 + 星数的排版，跟我们的卡片内容重复。
+
+真正的信号在 README 里：作者自己写的第一句话，和第一张截图。所以采集期就把每个仓库的
+README 拉一次，抽三样东西存进库：
+
+- **一级标题**，且只在它比项目名多说点什么时才显示（`Learn Rust, one exercise at a time` 值得显示，
+  `nanobot` 就是重复）；
+- **第一段正经说明**，跳过徽章行、代码块、HTML、语言切换条、ASCII art 和纯链接行；
+- **第一张能当封面的图**，跳过徽章站、SVG、视频附件，并且真的取回文件头看宽高——
+  小于 320×160 或比例极端（太扁的横幅、太长的长图）一律不要。
+
+3500 个仓库就是 3500 次 API 请求，按 1.3 次/秒（令牌额度 5000 次/小时）排队，
+四十多分钟跑完，只在造种子库时做一次。产品运行时不发任何请求，读的只是这三列。
 
 ## 采集为什么按星数分档
 
@@ -142,3 +174,5 @@ OAuth 登录尚未实现，所以运行时不需要任何令牌；只有 `flowct
 - 搜索、按语言筛选、多设备同步
 - APK（技术路线已定 Tauri 2，工具链未装）
 - 增量采集（现在只有 `flowctl harvest` 手动跑）
+- **封面图完全离线**：现在图片是 `raw.githubusercontent.com` 的外链，断网时全部退回文字形态。
+  把缩略图压好一起打包（估计 +20MB）还没做。

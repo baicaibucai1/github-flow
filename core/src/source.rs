@@ -1,9 +1,19 @@
 use crate::model::{Repo, SearchHit};
 use crate::store::Res;
 use std::collections::HashSet;
+use std::io::Read;
 use std::time::Duration;
 
 const UA: &str = "flow/0.1 (github discovery client)";
+
+/// 一次图片探测的结果。宽高为 0 表示没认出来（不是栅格图，或只取到半个头）。
+pub struct Probe {
+    pub ctype: String,
+    pub bytes: u64,
+    pub w: u32,
+    pub h: u32,
+}
+
 
 /// 唯一的出网口。所有网络请求都从这里走，
 /// 这样配额、重试、UA 只有一个地方要改。
@@ -161,6 +171,50 @@ impl Source {
         let text = r.into_string()?;
         // GitHub 对超大 README 会截断，界面上不需要全量，20000 字足够。
         Ok(text.chars().take(20_000).collect())
+    }
+
+    /// 只取图片开头 64KB，用来判断宽高和体积。
+    ///
+    /// 不下载整图：一张截图动辄 300KB，3500 个仓库就是上 G 的流量，
+    /// 而我们只需要知道它「够不够大、是不是太窄」。文件头里都有。
+    pub fn probe_image(&self, url: &str) -> Res<Probe> {
+        let r = self
+            .agent
+            .get(url)
+            .set("Range", "bytes=0-65535")
+            .set("Accept", "image/*")
+            .call()
+            .map_err(|e| format!("取图失败：{e}"))?;
+
+        let ctype = r.header("content-type").unwrap_or("").to_lowercase();
+        // Content-Range: bytes 0-65535/1234567
+        let total = r
+            .header("content-range")
+            .and_then(|v| v.rsplit('/').next().map(|s| s.to_string()))
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| r.header("content-length").and_then(|v| v.parse().ok()))
+            .unwrap_or(0);
+
+        // 只读前 64KB。`into_reader()` 给的是 `Box<dyn Read>`，
+        // 在 trait object 上没法直接 `take`，所以自己按块读到位就停。
+        let mut buf = Vec::with_capacity(64 * 1024);
+        let mut rd = r.into_reader();
+        let mut chunk = [0u8; 16 * 1024];
+        while buf.len() < 64 * 1024 {
+            let n = rd.read(&mut chunk)?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+        }
+
+        let (w, h) = crate::image::dims(&buf).unwrap_or((0, 0));
+        Ok(Probe {
+            ctype,
+            bytes: total,
+            w,
+            h,
+        })
     }
 
     pub fn rate(&self) -> Res<serde_json::Value> {

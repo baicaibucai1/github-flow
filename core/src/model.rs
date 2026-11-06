@@ -27,12 +27,18 @@ pub struct Repo {
     pub score: f64,
     /// 本机是否收藏
     pub saved: bool,
-}
 
-impl Repo {
-    pub fn og_image(&self) -> String {
-        format!("https://opengraph.githubassets.com/1/{}", self.full_name)
-    }
+    /// README 里的一级标题。没写 H1 就是空串——宁可空着，也不拿「Installation」冒充。
+    pub readme_title: String,
+    /// README 的第一段正经说明，已去掉徽章、代码块、HTML 与链接语法。
+    pub readme_head: String,
+    /// README 里第一张能当封面的图（已解析成绝对地址）。
+    pub cover_url: String,
+    /// 封面类型：`shot` 截图 / `logo` 图标 / `gif` 动图 / 空串表示没有。
+    /// 图标和截图要的排版不一样，所以得分开记。
+    pub cover_kind: String,
+    pub cover_w: u32,
+    pub cover_h: u32,
 }
 
 /// GitHub search 接口返回的原始形态。只取用得上的字段，
@@ -91,6 +97,12 @@ impl SearchHit {
             license: self.license.and_then(|l| l.spdx_id).unwrap_or_default(),
             score: 0.0,
             saved: false,
+            readme_title: String::new(),
+            readme_head: String::new(),
+            cover_url: String::new(),
+            cover_kind: String::new(),
+            cover_w: 0,
+            cover_h: 0,
         }
     }
 }

@@ -28,7 +28,14 @@ create table if not exists repo (
   is_fork     integer not null default 0,
   homepage    text not null default '',
   license     text not null default '',
-  score       real not null default 0
+  score       real not null default 0,
+  readme_title text not null default '',
+  readme_head  text not null default '',
+  cover_url    text not null default '',
+  cover_kind   text not null default '',
+  cover_w      integer not null default 0,
+  cover_h      integer not null default 0,
+  enriched     integer not null default 0
 );
 create index if not exists idx_repo_score  on repo(score desc);
 create index if not exists idx_repo_pushed on repo(pushed_at desc);
@@ -54,6 +61,7 @@ impl Store {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         let s = Self { conn };
         s.conn.execute_batch(SCHEMA)?;
+        s.migrate()?;
         Ok(s)
     }
 
@@ -62,7 +70,38 @@ impl Store {
         let conn = Connection::open_in_memory()?;
         let s = Self { conn };
         s.conn.execute_batch(SCHEMA)?;
+        s.migrate()?;
         Ok(s)
+    }
+
+    /// 给已经存在的库补列。
+    ///
+    /// `create table if not exists` 对老库不会做任何事，而用户机器上的
+    /// flow.db 是上一个版本建的 —— 不加这一步，新代码一读就报「no such column」。
+    fn migrate(&self) -> Res<()> {
+        let mut have = std::collections::HashSet::new();
+        {
+            let mut st = self.conn.prepare("pragma table_info(repo)")?;
+            let it = st.query_map([], |r| r.get::<_, String>(1))?;
+            for n in it.filter_map(Result::ok) {
+                have.insert(n);
+            }
+        }
+        for (name, decl) in [
+            ("readme_title", "text not null default ''"),
+            ("readme_head", "text not null default ''"),
+            ("cover_url", "text not null default ''"),
+            ("cover_kind", "text not null default ''"),
+            ("cover_w", "integer not null default 0"),
+            ("cover_h", "integer not null default 0"),
+            ("enriched", "integer not null default 0"),
+        ] {
+            if !have.contains(name) {
+                self.conn
+                    .execute(&format!("alter table repo add column {name} {decl}"), [])?;
+            }
+        }
+        Ok(())
     }
 
     pub fn count(&self) -> Res<i64> {
@@ -198,6 +237,53 @@ impl Store {
         Ok(())
     }
 
+    /// 写入一个仓库的 README 首屏。`enriched` 一定置 1 ——
+    /// 哪怕是「这个仓库没有 README」也要记下来，否则每次采集都会重试同一批空仓库。
+    pub fn set_readme(&mut self, id: i64, h: &crate::readme::Head, w: u32, hh: u32) -> Res<()> {
+        self.conn.execute(
+            "update repo set readme_title=?2, readme_head=?3, cover_url=?4, cover_kind=?5,
+                             cover_w=?6, cover_h=?7, enriched=1
+             where id=?1",
+            params![id, h.title, h.text, h.cover, h.kind.as_str(), w, hh],
+        )?;
+        Ok(())
+    }
+
+    /// 只标记「试过了、没有内容」，不写正文。
+    pub fn mark_enriched(&mut self, id: i64) -> Res<()> {
+        self.conn
+            .execute("update repo set enriched=1 where id=?1", params![id])?;
+        Ok(())
+    }
+
+    /// 全部退回「待补」。改了抽取规则之后用它重跑，不用重采项目。
+    pub fn rewind_enrich(&mut self) -> Res<()> {
+        self.conn.execute("update repo set enriched = 0", [])?;
+        Ok(())
+    }
+
+    /// 还没补过 README 的仓库。按分数排，先补会出现在流里的那些。
+    pub fn pending_enrich(&self, limit: usize) -> Res<Vec<(i64, String)>> {
+        let mut st = self.conn.prepare(
+            "select id, full_name from repo where enriched = 0
+             order by score desc, stars desc limit ?1",
+        )?;
+        let it = st.query_map(params![limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(it.filter_map(Result::ok).collect())
+    }
+
+    pub fn count_enriched(&self) -> Res<(i64, i64)> {
+        let done: i64 = self
+            .conn
+            .query_row("select count(*) from repo where enriched = 1", [], |r| r.get(0))?;
+        let with_cover: i64 = self.conn.query_row(
+            "select count(*) from repo where cover_url <> ''",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok((done, with_cover))
+    }
+
     pub fn meta_set(&self, k: &str, v: &str) -> Res<()> {
         self.conn.execute(
             "insert or replace into meta (k, v) values (?1, ?2)",
@@ -205,7 +291,6 @@ impl Store {
         )?;
         Ok(())
     }
-
     pub fn meta_get(&self, k: &str) -> Res<Option<String>> {
         let mut st = self.conn.prepare("select v from meta where k = ?1")?;
         let mut it = st.query_map(params![k], |r| r.get::<_, String>(0))?;
@@ -303,6 +388,12 @@ fn row_to_repo(row: &rusqlite::Row) -> rusqlite::Result<Repo> {
         license: row.get("license")?,
         score: row.get("score")?,
         saved: false,
+        readme_title: row.get("readme_title")?,
+        readme_head: row.get("readme_head")?,
+        cover_url: row.get("cover_url")?,
+        cover_kind: row.get("cover_kind")?,
+        cover_w: row.get("cover_w")?,
+        cover_h: row.get("cover_h")?,
     })
 }
 
@@ -336,6 +427,12 @@ mod tests {
             license: "MIT".into(),
             score,
             saved: false,
+            readme_title: String::new(),
+            readme_head: String::new(),
+            cover_url: String::new(),
+            cover_kind: String::new(),
+            cover_w: 0,
+            cover_h: 0,
         }
     }
 

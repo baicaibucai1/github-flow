@@ -8,8 +8,10 @@
 //!    这个 crate 里出现 `HOME` / `LOCALAPPDATA` 就是错的。
 //! 3. **打分是纯函数**。同样的输入必须给出同样的分数，否则没法测、没法解释。
 
+pub mod image;
 pub mod model;
 pub mod rank;
+pub mod readme;
 pub mod source;
 pub mod store;
 

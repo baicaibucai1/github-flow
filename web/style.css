@@ -61,45 +61,78 @@ img{display:block}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 .card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
 
-/* 封面不用截图、不用网络：色相由项目 id 决定，叠一层网格纹理和首字母。
-   这样 3500 张卡各有各的颜色，又完全不依赖外部图片 —— 断网也好看。 */
+/* 卡片头部展示的是「项目自己怎么写自己」：README 的首图，没有图就是首段。
+   图片来自外网，可能加载失败，所以文字层不是兜底样式，而是另一种正式形态——
+   两种都必须好看，否则断网时整个流就塌了。
+   色相由项目 id 决定，保证相邻两张不撞色。 */
 .cover{
-  position:relative;padding-bottom:64%;overflow:hidden;
+  position:relative;overflow:hidden;isolation:isolate;
   background:
-    radial-gradient(circle at 26% 16%, hsl(var(--h) 95% 88%) 0%, transparent 60%),
-    linear-gradient(135deg, hsl(var(--h) 74% 85%) 0%, hsl(calc(var(--h) + 46) 66% 74%) 100%);
+    radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 84% 94%) 0%, transparent 62%),
+    linear-gradient(158deg, hsl(var(--h) 58% 90%) 0%, hsl(calc(var(--h) + 34) 50% 83%) 100%);
 }
-.cover::after{
-  content:"";position:absolute;inset:0;pointer-events:none;
-  background-image:
-    linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
-  background-size:24px 24px;
-  mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.12));
-  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.12));
+.cover.is-img{aspect-ratio:16/10}
+/* 只有一行标题的 README 也得撑住，否则头部会变成一条 60px 的窄条 */
+.cover.is-doc{
+  display:flex;flex-direction:column;justify-content:center;
+  min-height:130px;padding:14px 15px 26px 20px;
 }
-.cover .fb{
+.cover.is-plain{padding-bottom:62%}
+
+/* 文字层：一条细竖线 + 标题 + 首段，像一页被截断的 README */
+.snip{
+  position:absolute;inset:0;z-index:0;
+  display:flex;flex-direction:column;gap:5px;
+  padding:15px 16px 32px 18px;overflow:hidden;
+}
+.is-plain .snip{display:none}
+/* 没有图的时候，文字层就是封面本身，必须撑开高度 ——
+   如果它也绝对定位，整个头部会塌成一条 padding。 */
+.cover.is-doc .snip{
+  position:relative;inset:auto;
+  padding:0;gap:4px;flex:0 0 auto;
+}
+.snip::before{
+  content:"";position:absolute;left:9px;top:15px;bottom:32px;width:2px;border-radius:2px;
+  background:hsl(var(--h) 62% 50% / .34);
+}
+.cover.is-doc .snip::before{left:-11px;top:1px;bottom:2px}
+.rt{
+  font-size:13px;font-weight:700;line-height:1.34;letter-spacing:-.015em;
+  color:hsl(var(--h) 46% 20%);opacity:.86;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.rp{
+  margin:0;font-size:12.5px;line-height:1.62;
+  color:hsl(var(--h) 20% 22%);opacity:.88;
+  display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
+}
+/* 文字层用的是 -webkit-line-clamp，末行自带省略号，
+   不再额外盖一层渐隐——那层会压掉最后一行字。 */
+.cover.is-plain .fb{
   position:absolute;left:16px;top:50%;transform:translateY(-56%);
   font-size:62px;font-weight:800;line-height:1;letter-spacing:-.05em;
-  color:hsl(var(--h) 62% 30%);opacity:.3;
+  color:hsl(var(--h) 62% 30%);opacity:.26;
 }
-/* 右下角的星数：让色块不只是一块颜色，扫过去能读到量级 */
-.cover .cnt{
-  position:absolute;right:12px;bottom:10px;z-index:1;
-  font-size:19px;font-weight:700;letter-spacing:-.02em;
-  color:hsl(var(--h) 58% 26%);opacity:.55;
-  font-variant-numeric:tabular-nums;
+
+/* 真图。加载成功才淡入，失败就整块退回文字形态。 */
+.shot{
+  position:absolute;inset:0;z-index:1;
+  width:100%;height:100%;object-fit:cover;
+  opacity:0;transition:opacity .45s ease, transform .6s cubic-bezier(.2,.7,.3,1);
 }
-.cover .cnt i{font-size:10px;font-style:normal;font-weight:600;opacity:.7;margin-left:2px}
-.cover .tag{
-  position:absolute;left:12px;bottom:12px;z-index:1;
-  padding:3px 9px;border-radius:999px;
-  font-size:11px;color:#fff;
-  background:rgba(15,15,20,.5);
-  backdrop-filter:blur(6px);
+.shot.ok{opacity:1}
+.shot.broken{display:none}
+.card:hover .cover .shot{transform:scale(1.035)}
+/* 图标类不裁切，留白居中，否则一个方形 logo 会被裁得只剩中间一截 */
+.cover.is-logo .shot{
+  object-fit:contain;padding:20px;
+  background:
+    radial-gradient(80% 80% at 50% 40%, #fff 0%, hsl(var(--h) 30% 97%) 70%, hsl(var(--h) 30% 94%) 100%);
 }
+
 .save{
-  position:absolute;right:9px;top:9px;z-index:2;
+  position:absolute;right:9px;top:9px;z-index:3;
   width:30px;height:30px;border-radius:50%;
   display:grid;place-items:center;
   background:rgba(255,255,255,.82);
@@ -110,11 +143,35 @@ img{display:block}
 .save:hover{transform:scale(1.08);color:var(--accent)}
 .save.on{color:var(--accent);background:#fff}
 
-.body{padding:10px 12px 12px;min-width:0;overflow:hidden}
+/* 星数：文字形态里当量级读，图片形态里压成小药丸，别挡住图 */
+.cnt{
+  position:absolute;right:12px;bottom:10px;z-index:2;
+  display:inline-flex;align-items:baseline;gap:2px;
+  font-size:17px;font-weight:700;letter-spacing:-.02em;
+  color:hsl(var(--h) 58% 26%);opacity:.5;
+  font-variant-numeric:tabular-nums;
+}
+.cnt i{font-size:10px;font-style:normal;font-weight:600;opacity:.7}
+.cover.is-img:not(.broken) .cnt{
+  font-size:11.5px;color:#fff;opacity:1;
+  padding:3px 8px;border-radius:999px;
+  background:rgba(12,12,16,.5);
+  backdrop-filter:blur(8px) saturate(140%);
+}
+/* 告诉读者这段字是从 README 里摘的，不是我们编的简介 */
+.rtag{
+  position:absolute;left:14px;bottom:11px;z-index:2;
+  font-size:9.5px;font-weight:700;letter-spacing:.16em;
+  color:hsl(var(--h) 38% 28%);opacity:.3;
+}
+
+.body{padding:11px 12px 12px;min-width:0;overflow:hidden}
 .body h3{
-  margin:0 0 4px;font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+  margin:0 0 4px;font-size:13.5px;font-weight:650;letter-spacing:-.01em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.body h3 .own{color:var(--ink-3);font-weight:500}
+.body h3 .own b{margin:0 1px 0 0;font-weight:400;opacity:.5}
 .body p{
   margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
@@ -142,36 +199,58 @@ body.dim .top{filter:brightness(.92)}
   transform:translateX(100%);
   transition:transform .28s cubic-bezier(.32,.72,.28,1);
   overflow-y:auto;overscroll-behavior:contain;
+  /* 竖着排是为了让底部按钮在内容不够高时也贴着底，
+     否则短抽屉的按钮会浮在半空中 */
+  display:flex;flex-direction:column;
 }
 .drawer.on{transform:none}
+.dhero{flex:0 0 auto}
+.dbody{flex:1 0 auto}
 
 .dhero{
-  position:relative;padding-bottom:44%;overflow:hidden;
+  position:relative;overflow:hidden;
   background:
-    radial-gradient(circle at 24% 20%, hsl(var(--h) 88% 91%) 0%, transparent 60%),
-    linear-gradient(135deg, hsl(var(--h) 76% 92%) 0%, hsl(calc(var(--h) + 46) 68% 85%) 100%);
+    radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 84% 97%) 0%, transparent 60%),
+    linear-gradient(158deg, hsl(var(--h) 56% 95%) 0%, hsl(calc(var(--h) + 34) 46% 90%) 100%);
 }
-.dhero::after{
-  content:"";position:absolute;inset:0;pointer-events:none;
-  background-image:
-    linear-gradient(rgba(255,255,255,.45) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.45) 1px, transparent 1px);
-  background-size:28px 28px;
-  mask-image:linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.15));
-  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.15));
+.dhero.is-img{aspect-ratio:16/6.6}
+.dhero.is-plain{padding-bottom:44%}
+.dhero.is-doc{
+  display:flex;flex-direction:column;justify-content:center;
+  padding:24px 24px 26px;min-height:150px;
 }
+.dhero .snip{padding:22px 24px 30px}
+/* 同卡片：没有图时文字层要参与撑高 */
+.dhero.is-doc .snip{position:relative;inset:auto;padding:0;flex:0 0 auto}
+.dhero .snip::before{left:13px;top:22px;bottom:30px}
+.dhero.is-doc .snip::before{left:-13px;top:2px;bottom:2px}
+.dhero .rt{font-size:13px}
+.dhero .rp{font-size:13.5px;line-height:1.68;-webkit-line-clamp:3}
+.dhero.is-logo .shot{object-fit:contain;padding:28px}
 .dhero .fb{
   position:absolute;left:24px;bottom:20px;
   font-size:72px;font-weight:800;line-height:1;letter-spacing:-.05em;
   color:hsl(var(--h) 52% 38%);opacity:.26;
 }
 .dclose{
-  position:absolute;right:14px;top:14px;z-index:2;
+  position:absolute;right:14px;top:14px;z-index:4;
   width:32px;height:32px;border-radius:50%;
   background:rgba(255,255,255,.88);color:var(--ink);
   display:grid;place-items:center;font-size:16px;
   backdrop-filter:blur(8px);
 }
+
+/* README 摘录：抽屉里单独标出来，跟 GitHub 的 description 区分开 */
+.excerpt{
+  margin-top:14px;padding:12px 14px;border-radius:10px;
+  background:#fafafb;border-left:2px solid #e6e6ea;
+}
+.rlabel{
+  display:block;font-size:10px;font-weight:700;letter-spacing:.14em;
+  color:var(--ink-3);
+}
+.excerpt p{margin:6px 0 0;font-size:13px;line-height:1.72;color:var(--ink-2)}
+.excerpt h4{margin:7px 0 0;font-size:13.5px;font-weight:650;letter-spacing:-.01em}
 
 .dbody{padding:18px 22px 26px}
 .dhead{display:flex;align-items:flex-start;gap:12px}

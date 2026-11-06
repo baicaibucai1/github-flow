@@ -49,21 +49,59 @@ function ago(iso) {
 
 /* ── 卡片 ───────────────────────────── */
 
-function cardHTML(r) {
+// 卡片头部展示的是「这个项目自己怎么写自己」：README 的首图 + 首段。
+// 所以三种形态共用一块地方：
+//   有图 → 铺图；图挂了或本来没图 → 露出底下的 README 摘录；
+//   连 README 都没有 → 退回首字母色块。
+function coverHTML(r) {
   const h = hue(r.id);
+  const letter = esc((r.name || "?")[0].toUpperCase());
+  const hasImg = !!r.cover_url;
+  const kind = r.cover_kind || "shot";
+  const cls = hasImg ? `is-img is-${kind}` : r.readme_head || r.readme_title ? "is-doc" : "is-plain";
+  // README 的标题多数就是项目名，下面已经有名字了，再写一遍是噪音。
+  // 只有它比名字多说了点什么（"Learn Rust, one exercise at a time"）才值得当标题。
+  const t = r.readme_title || "";
+  const showTitle = t && t.toLowerCase() !== (r.name || "").toLowerCase() && t.length > (r.name || "").length + 3;
+  const img = hasImg
+    ? `<img class="shot" src="${esc(r.cover_url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+    : "";
+  const snip = `
+    <div class="snip">
+      ${showTitle ? `<div class="rt">${esc(t)}</div>` : ""}
+      ${r.readme_head ? `<p class="rp">${esc(r.readme_head)}</p>` : ""}
+      ${!showTitle && !r.readme_head ? `<span class="fb">${letter}</span>` : ""}
+    </div>`;
+  return `<div class="cover ${cls}" style="--h:${h}">
+    ${snip}${img}
+    ${cls === "is-doc" ? `<span class="rtag">README</span>` : ""}
+    <span class="cnt">${fmt(r.stars)}<i>★</i></span>
+    <button class="save ${r.saved ? "on" : ""}" data-act="save" data-id="${r.id}" title="收藏">♥</button>
+  </div>`;
+}
+
+// README 首段和 GitHub 上的简介经常是同一句话。
+// 头部已经把它完整显示出来了，卡片底部再抄一遍就是重复。
+function redundant(desc, head) {
+  if (!desc || !head) return false;
+  const n = (s) => s.toLowerCase().replace(/[\s\p{P}]/gu, "");
+  const a = n(desc).slice(0, 30);
+  return a.length >= 10 && n(head).includes(a);
+}
+
+function cardHTML(r) {
   const lang = r.language
     ? `<span class="lang" style="color:${LC[r.language] || "#9a9aa1"}"><i class="d"></i>${esc(r.language)}</span>`
     : "";
+  // 头部没图时展示的就是 README 首段，底部再抄一遍简介就是重复。
+  // 有图的卡片头被图盖住了，简介还得留着。
+  const dup = !r.cover_url && redundant(r.description, r.readme_head);
+  const desc = dup ? "" : r.description || r.readme_head || "这个项目没有写描述";
   return `<article class="card" data-id="${r.id}">
-  <div class="cover" style="--h:${h}">
-    <span class="fb">${esc((r.name || "?")[0].toUpperCase())}</span>
-    ${r.language ? `<span class="tag">${esc(r.language)}</span>` : ""}
-    <span class="cnt">${fmt(r.stars)}<i>★</i></span>
-    <button class="save ${r.saved ? "on" : ""}" data-act="save" data-id="${r.id}" title="收藏">♥</button>
-  </div>
+  ${coverHTML(r)}
   <div class="body">
-    <h3 title="${esc(r.full_name)}">${esc(r.full_name)}</h3>
-    <p>${esc(r.description || "这个项目没有写描述")}</p>
+    <h3 title="${esc(r.full_name)}"><span class="own">${esc(r.owner)}<b>/</b></span>${esc(r.name)}</h3>
+    ${desc ? `<p>${esc(desc)}</p>` : ""}
     <div class="meta">${lang}<span>${ago(r.pushed_at)}</span></div>
   </div>
 </article>`;
@@ -97,7 +135,13 @@ function estimate(r, colW) {
   const chars = (r.description || "").length;
   const per = Math.max(10, Math.floor(colW / 7));
   const lines = Math.min(2, Math.max(1, Math.ceil(chars / per)));
-  return colW * 0.62 + 30 + lines * 19 + 26;
+  // 头部高度：有图是固定 16:10；只有文字时按行数估；两者都没有才是旧的色块比例。
+  const cover = r.cover_url
+    ? colW * 0.625
+    : r.readme_head
+      ? 96 + Math.min(3, Math.ceil(r.readme_head.length / Math.max(12, Math.floor(colW / 7)))) * 19
+      : colW * 0.62;
+  return cover + 30 + lines * 19 + 26;
 }
 
 // 按估算高度投到最矮的一列。
@@ -149,8 +193,27 @@ function detailHTML(r) {
     .slice(0, 10)
     .map((t) => `<span class="chip">${esc(t)}</span>`)
     .join("");
-  return `<div class="dhero" style="--h:${h}">
-  <span class="fb">${esc((r.name || "?")[0].toUpperCase())}</span>
+  const letter = esc((r.name || "?")[0].toUpperCase());
+  const hero = r.cover_url
+    ? `<img class="shot" src="${esc(r.cover_url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+    : r.readme_title || r.readme_head
+      ? `<div class="snip">
+          ${r.readme_title ? `<div class="rt">${esc(r.readme_title)}</div>` : ""}
+          ${r.readme_head ? `<p class="rp">${esc(r.readme_head)}</p>` : ""}
+        </div>`
+      : `<span class="fb">${letter}</span>`;
+
+  // 描述和 README 首段经常是同一句话，重复摆两遍显得很傻
+  const dup = r.description && r.readme_head && r.description.slice(0, 24) === r.readme_head.slice(0, 24);
+  const excerpt =
+    r.readme_head && !dup
+      ? `<div class="excerpt"><span class="rlabel">README</span><p>${esc(r.readme_head)}</p></div>`
+      : r.readme_title
+        ? `<div class="excerpt"><span class="rlabel">README</span><h4>${esc(r.readme_title)}</h4></div>`
+        : "";
+
+  return `<div class="dhero ${r.cover_url ? "is-img is-" + (r.cover_kind || "shot") : "is-doc"}" style="--h:${h}">
+  ${hero}
   <button class="dclose" data-act="close" title="关闭">✕</button>
 </div>
 <div class="dbody">
@@ -162,6 +225,7 @@ function detailHTML(r) {
     <button class="save ${r.saved ? "on" : ""}" data-act="save" data-id="${r.id}" title="收藏">♥</button>
   </div>
   <p class="desc">${esc(r.description || "这个项目没有写描述。")}</p>
+  ${excerpt}
   <div class="stats">
     <div><b>${fmt(r.stars)}</b><span>stars</span></div>
     <div><b>${fmt(r.forks)}</b><span>forks</span></div>
@@ -241,13 +305,17 @@ async function flipSave(id) {
 
 /* ── 事件 ───────────────────────────── */
 
-// 图片加载成功才淡入；失败就把 <img> 藏掉，露出底下的渐变色块和首字。
+// 图片加载成功才淡入；失败就把 <img> 藏掉，露出底下那层 README 摘录。
 // 全程不依赖内联 onerror —— CSP 不允许内联脚本。
 document.addEventListener("load", (e) => {
   if (e.target.tagName === "IMG") e.target.classList.add("ok");
 }, true);
 document.addEventListener("error", (e) => {
-  if (e.target.tagName === "IMG") e.target.classList.add("broken");
+  if (e.target.tagName !== "IMG") return;
+  e.target.classList.add("broken");
+  // 卡片和抽屉的头部都要整体切回文字形态，光把 img 藏起来会留一块空白
+  e.target.closest(".cover")?.classList.add("broken");
+  e.target.closest(".dhero")?.classList.add("broken");
 }, true);
 
 document.addEventListener("click", (e) => {
