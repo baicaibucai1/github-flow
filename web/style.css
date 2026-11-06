@@ -1,17 +1,21 @@
 :root{
-  --bg:#f7f7f8;
+  --bg:#f5f5f7;
   --card:#fff;
   --ink:#141414;
   --ink-2:#5c5c61;
   --ink-3:#9a9aa1;
   --line:#ececef;
   --accent:#ff2e4d;
-  --radius:14px;
-  --shadow:0 1px 2px rgba(15,15,20,.05), 0 4px 14px rgba(15,15,20,.04);
-  --shadow-lift:0 6px 22px rgba(15,15,20,.10);
+  --radius:12px;
+  --shadow:0 1px 2px rgba(15,15,20,.06);
+  --shadow-lift:0 8px 26px rgba(15,15,20,.12);
+  --side:204px;
 }
 
 *{box-sizing:border-box}
+/* 浮层用的是 display:flex，会把 hidden 属性的 display:none 盖掉，
+   所以在最前面兜一条 —— 否则页面一打开就有一块空白浮层压在中间。 */
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{
   background:var(--bg);
@@ -23,50 +27,125 @@ body{
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 img{display:block}
 
-/* ── 顶栏 ─────────────────────────── */
-.top{
-  position:sticky;top:0;z-index:10;
-  display:flex;align-items:center;gap:18px;
-  height:56px;padding:0 22px;
-  background:rgba(247,247,248,.86);
-  backdrop-filter:saturate(180%) blur(14px);
-  -webkit-backdrop-filter:saturate(180%) blur(14px);
-  border-bottom:1px solid rgba(0,0,0,.05);
+/* ── 左侧导航 ─────────────────────── */
+/* 固定贴左边，右边一条细线。整页滚动时它不动，
+   主区靠 margin-left 让开 —— 用 flex 的话页面滚动条会跑到侧栏右边。 */
+.side{
+  position:fixed;left:0;top:0;z-index:30;
+  width:var(--side);height:100%;
+  display:flex;flex-direction:column;
+  padding:20px 14px 16px;
+  background:#fff;border-right:1px solid var(--line);
 }
-.brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.02em;font-size:16px}
+.logo{
+  display:flex;align-items:center;gap:9px;
+  padding:0 10px;margin-bottom:26px;
+  font-size:17px;font-weight:700;letter-spacing:-.02em;
+}
 .mark{
-  width:16px;height:16px;border-radius:5px;
+  width:18px;height:18px;border-radius:6px;flex:0 0 auto;
   background:conic-gradient(from 210deg, #ff2e4d, #ff8a3d, #ffd23d, #34d399, #3b82f6, #a855f7, #ff2e4d);
 }
-.tabs{display:flex;gap:4px}
-.tab{
-  padding:6px 13px;border-radius:999px;font-size:13px;color:var(--ink-2);
-  transition:background .15s,color .15s;
+.nav{display:flex;flex-direction:column;gap:2px}
+.navitem{
+  display:flex;align-items:center;gap:11px;
+  height:42px;padding:0 12px;border-radius:10px;
+  font-size:14px;color:var(--ink-2);
+  transition:background .14s,color .14s;
 }
-.tab:hover{background:rgba(0,0,0,.04)}
-.tab.on{background:var(--ink);color:#fff}
-.tab i{font-style:normal;font-size:11px;opacity:.6;margin-left:4px}
-.stat{margin-left:auto;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.navitem svg{
+  width:19px;height:19px;flex:0 0 auto;
+  fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.navitem:hover{background:#f4f4f6;color:var(--ink)}
+.navitem.on{background:#f2f2f4;color:var(--ink);font-weight:600}
+.navitem i{
+  margin-left:auto;font-style:normal;font-size:11px;
+  color:var(--ink-3);font-variant-numeric:tabular-nums;
+}
+.sidefoot{margin-top:auto;padding:0 12px}
+.pool{font-size:11.5px;color:var(--ink-3);line-height:1.6;white-space:pre-line}
+
+/* ── 顶栏搜索 ─────────────────────── */
+.main{margin-left:var(--side);min-height:100vh}
+.top{
+  position:sticky;top:0;z-index:12;
+  padding:16px 32px 10px;
+  background:linear-gradient(to bottom,var(--bg) 68%,rgba(245,245,247,0));
+}
+.search{
+  position:relative;display:flex;align-items:center;gap:8px;
+  max-width:560px;height:44px;margin:0 auto;
+  padding:0 14px 0 8px;
+  background:#fff;border-radius:999px;
+  box-shadow:0 1px 3px rgba(15,15,20,.07);
+  transition:box-shadow .16s;
+}
+.search:focus-within{box-shadow:0 2px 10px rgba(15,15,20,.12)}
+.plus{
+  width:28px;height:28px;border-radius:50%;flex:0 0 auto;
+  display:grid;place-items:center;
+  background:#f2f2f4;color:var(--ink-2);font-size:15px;line-height:1;
+}
+.plus:hover{background:#e9e9ec}
+.search input{
+  flex:1;min-width:0;height:100%;
+  border:0;background:none;outline:none;
+  font:inherit;font-size:13.5px;color:var(--ink);
+}
+.search input::placeholder{color:var(--ink-3)}
+.search input::-webkit-search-cancel-button{display:none}
+.mag{
+  width:17px;height:17px;flex:0 0 auto;
+  fill:none;stroke:var(--ink-3);stroke-width:1.8;stroke-linecap:round;
+}
+
+/* ── 分类行 ───────────────────────── */
+.cats{
+  display:flex;justify-content:center;gap:4px;
+  padding:2px 32px 10px;
+  overflow-x:auto;scrollbar-width:none;
+}
+.cats::-webkit-scrollbar{display:none}
+.cat{
+  position:relative;flex:0 0 auto;
+  padding:7px 13px;border-radius:8px;
+  font-size:13.5px;color:var(--ink-2);
+  transition:color .14s,background .14s;
+  white-space:nowrap;
+}
+.cat:hover{background:rgba(0,0,0,.035)}
+.cat.on{color:var(--ink);font-weight:600}
+/* 选中项底下一个小红点，比下划线轻，也不占高度 */
+.cat.on::after{
+  content:"";position:absolute;left:50%;bottom:1px;
+  width:4px;height:4px;margin-left:-2px;border-radius:50%;
+  background:var(--accent);
+}
 
 /* ── 瀑布流 ───────────────────────── */
-.feed{display:flex;align-items:flex-start;gap:14px;padding:18px 22px 80px}
-.col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:14px}
+/* 卡片不再有白底和阴影：图片本身就是卡片，文字直接落在灰底上。
+   这是小红书那个流派的关键 —— 有容器就会显得"一格一格的"，
+   没有容器整片才连得起来。 */
+.feed{display:flex;align-items:flex-start;gap:14px;padding:6px 32px 90px}
+.col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px}
 
 .card{
-  background:var(--card);border-radius:var(--radius);overflow:hidden;
-  box-shadow:var(--shadow);cursor:pointer;min-width:0;
-  transition:transform .18s ease, box-shadow .18s ease;
+  min-width:0;cursor:pointer;
   animation:rise .34s cubic-bezier(.22,.8,.3,1) both;
 }
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+.card .cover{transition:transform .22s ease, box-shadow .22s ease}
+.card:hover .cover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
 
-/* 卡片头部展示的是「项目自己怎么写自己」：README 的首图，没有图就是首段。
+/* 头部展示「项目自己怎么写自己」：README 的首图，没有图就是首段。
    图片来自外网，可能加载失败，所以文字层不是兜底样式，而是另一种正式形态——
    两种都必须好看，否则断网时整个流就塌了。
    色相由项目 id 决定，保证相邻两张不撞色。 */
 .cover{
   position:relative;overflow:hidden;isolation:isolate;
+  border-radius:var(--radius);
   background:
     radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 84% 94%) 0%, transparent 62%),
     linear-gradient(158deg, hsl(var(--h) 58% 90%) 0%, hsl(calc(var(--h) + 34) 50% 83%) 100%);
@@ -77,9 +156,9 @@ img{display:block}
    文字一律靠上排——左侧那条竖线是从顶拉到底的，居中的话会和文字对不上。 */
 .cover.is-doc{
   display:flex;flex-direction:column;justify-content:flex-start;
-  min-height:104px;padding:14px 15px 26px 20px;
+  min-height:112px;padding:15px 15px 27px 20px;
 }
-.cover.is-plain{padding-bottom:62%}
+.cover.is-plain{padding-bottom:100%}
 
 /* 文字层：一条细竖线 + 标题 + 首段，像一页被截断的 README */
 .snip{
@@ -88,6 +167,10 @@ img{display:block}
   padding:15px 16px 32px 18px;overflow:hidden;
 }
 .is-plain .snip{display:none}
+/* 图片正常时彻底关掉文字层：README 里的 PNG 相当一部分是透明底 logo，
+   只靠 z-index 盖不住，文字会从图里透出来，看起来像两段话压在一起。
+   图片加载失败时 .broken 会加在 .cover 上，那时文字层自动回来。 */
+.cover.is-img:not(.broken) .snip{display:none}
 /* 没有图的时候，文字层就是封面本身，必须撑开高度 ——
    如果它也绝对定位，整个头部会塌成一条 padding。 */
 .cover.is-doc .snip{
@@ -109,23 +192,25 @@ img{display:block}
   color:hsl(var(--h) 20% 22%);opacity:.88;
   display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
 }
-/* 文字层用的是 -webkit-line-clamp，末行自带省略号，
-   不再额外盖一层渐隐——那层会压掉最后一行字。 */
 .cover.is-plain .fb{
   position:absolute;left:16px;top:50%;transform:translateY(-56%);
   font-size:62px;font-weight:800;line-height:1;letter-spacing:-.05em;
   color:hsl(var(--h) 62% 30%);opacity:.26;
 }
 
-/* 真图。加载成功才淡入，失败就整块退回文字形态。 */
+/* 真图。加载失败就整块退回文字形态。
+   不做 opacity 淡入：一屏几十张图同时淡入本来就很吵，而且懒加载的图
+   常常在滚动后才到手，过渡会让它们「半透明地挂在那里」一会儿。
+   直接出现更干净。 */
 .shot{
   position:absolute;inset:0;z-index:1;
   width:100%;height:100%;object-fit:cover;
-  opacity:0;transition:opacity .45s ease, transform .6s cubic-bezier(.2,.7,.3,1);
+  display:none;
+  transition:transform .6s cubic-bezier(.2,.7,.3,1);
 }
-.shot.ok{opacity:1}
+.shot.ok{display:block}
 .shot.broken{display:none}
-.card:hover .cover .shot{transform:scale(1.035)}
+.card:hover .cover .shot{transform:scale(1.03)}
 /* 图标类不裁切，留白居中，否则一个方形 logo 会被裁得只剩中间一截 */
 .cover.is-logo .shot{
   object-fit:contain;padding:20px;
@@ -134,160 +219,202 @@ img{display:block}
 }
 
 .save{
-  position:absolute;right:9px;top:9px;z-index:3;
-  width:30px;height:30px;border-radius:50%;
+  position:absolute;right:8px;top:8px;z-index:3;
+  width:28px;height:28px;border-radius:50%;
   display:grid;place-items:center;
-  background:rgba(255,255,255,.82);
+  background:rgba(255,255,255,.8);
   backdrop-filter:blur(6px);
-  color:#b9b9c0;font-size:15px;line-height:1;
-  transition:transform .16s, color .16s, background .16s;
+  color:#a8a8b0;font-size:14px;line-height:1;
+  opacity:0;transition:opacity .16s,transform .16s,color .16s;
 }
-.save:hover{transform:scale(1.08);color:var(--accent)}
+.card:hover .save,.save.on{opacity:1}
+.save:hover{transform:scale(1.1);color:var(--accent)}
 .save.on{color:var(--accent);background:#fff}
+/* 触摸屏没有 hover，收藏按钮必须一直露着 */
+@media (hover:none){.save{opacity:1}}
 
 /* 星数：文字形态里当量级读，图片形态里压成小药丸，别挡住图 */
 .cnt{
-  position:absolute;right:12px;bottom:10px;z-index:2;
+  position:absolute;right:10px;bottom:9px;z-index:2;
   display:inline-flex;align-items:baseline;gap:2px;
-  font-size:17px;font-weight:700;letter-spacing:-.02em;
+  font-size:16px;font-weight:700;letter-spacing:-.02em;
   color:hsl(var(--h) 58% 26%);opacity:.5;
   font-variant-numeric:tabular-nums;
 }
 .cnt i{font-size:10px;font-style:normal;font-weight:600;opacity:.7}
 .cover.is-img:not(.broken) .cnt{
-  font-size:11.5px;color:#fff;opacity:1;
-  padding:3px 8px;border-radius:999px;
-  background:rgba(12,12,16,.5);
+  font-size:11px;color:#fff;opacity:1;
+  padding:2px 7px;border-radius:999px;
+  background:rgba(12,12,16,.46);
   backdrop-filter:blur(8px) saturate(140%);
 }
 /* 告诉读者这段字是从 README 里摘的，不是我们编的简介 */
 .rtag{
-  position:absolute;left:14px;bottom:11px;z-index:2;
-  font-size:9.5px;font-weight:700;letter-spacing:.16em;
+  position:absolute;left:14px;bottom:10px;z-index:2;
+  font-size:9px;font-weight:700;letter-spacing:.16em;
   color:hsl(var(--h) 38% 28%);opacity:.3;
 }
 
-.body{padding:11px 12px 12px;min-width:0;overflow:hidden}
+.body{padding:9px 2px 0;min-width:0}
 .body h3{
-  margin:0 0 4px;font-size:13.5px;font-weight:650;letter-spacing:-.01em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  margin:0;font-size:13.5px;font-weight:600;line-height:1.45;letter-spacing:-.005em;
+  word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;
 }
-.body h3 .own{color:var(--ink-3);font-weight:500}
-.body h3 .own b{margin:0 1px 0 0;font-weight:400;opacity:.5}
 .body p{
-  margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2);
+  margin:3px 0 0;font-size:12.5px;line-height:1.55;color:var(--ink-2);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
 }
-.meta{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11.5px;color:var(--ink-3)}
-.meta .lang{display:inline-flex;align-items:center;gap:5px}
-.meta .d{width:7px;height:7px;border-radius:50%;background:currentColor}
-.meta .star{color:var(--ink-2);font-variant-numeric:tabular-nums}
+/* 底部一行：头像 + 作者 + 星数，对应小红书的「作者 · 点赞」 */
+.foot{
+  display:flex;align-items:center;gap:6px;
+  margin-top:8px;font-size:11.5px;color:var(--ink-3);
+  min-width:0;
+}
+.ava{
+  width:18px;height:18px;border-radius:50%;flex:0 0 auto;
+  display:grid;place-items:center;
+  font-size:9.5px;font-weight:700;line-height:1;
+  background:hsl(var(--h) 62% 90%);color:hsl(var(--h) 50% 32%);
+  text-transform:uppercase;
+}
+.who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.foot .sp{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:3px}
+.lang{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+.lang .d{width:6px;height:6px;border-radius:50%;background:currentColor}
 
-/* ── 抽屉 ─────────────────────────── */
-/* 遮罩用 display 控制而不是 opacity 过渡：
-   抽屉是唯一需要的动效，遮罩跟着做过渡反而容易出现"点了没反应"的错觉 */
-/* 层级用「底下的内容变暗」来表达，而不是盖一层黑。
-   盖层在无头渲染里容易整块不绘制，而 filter 走的是另一条绘制路径，更稳。
-   mask 本身只保留透明点击区，用来点外部关闭。 */
-.mask{position:fixed;inset:0;z-index:15;display:none}
+/* ── 详情浮层 ─────────────────────── */
+/* 小红书那种居中大浮层，不是侧边抽屉。三段：
+   左操作栏（竖排图标）/ 中转述内容 / 右元信息。
+   我们没评论，右栏放数据，但保留它的密度和位置感。 */
+.mask{position:fixed;inset:0;z-index:40;display:none;background:rgba(0,0,0,.22)}
 .mask.show{display:block}
-body.dim .feed{filter:brightness(.6) saturate(.85)}
-body.dim .top{filter:brightness(.92)}
-.drawer{
-  position:fixed;top:0;right:0;z-index:20;
-  width:min(560px,94vw);height:100%;
-  background:#fff;
-  box-shadow:-10px 0 40px rgba(15,15,20,.16);
-  transform:translateX(100%);
-  transition:transform .28s cubic-bezier(.32,.72,.28,1);
-  overflow-y:auto;overscroll-behavior:contain;
-  /* 竖着排是为了让底部按钮在内容不够高时也贴着底，
-     否则短抽屉的按钮会浮在半空中 */
+body.dim .main{filter:brightness(.55) saturate(.9);pointer-events:none}
+body.dim{overflow:hidden}
+
+.modal{
+  position:fixed;z-index:50;
+  left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(1080px,94vw);
+  /* 高度跟着内容走，只封顶。写死 760px 的话，没有封面图的项目
+     正文只有三行，底下会空出一大片，看着像没加载完。 */
+  height:auto;max-height:min(760px,90vh);
+  display:flex;overflow:hidden;
+  background:#fff;border-radius:16px;
+  box-shadow:0 24px 70px rgba(15,15,20,.28);
+  animation:pop .2s cubic-bezier(.22,.8,.3,1) both;
+}
+@keyframes pop{from{opacity:0;transform:translate(-50%,-48%) scale(.98)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+
+/* 左：竖排操作栏 */
+.mleft{
+  flex:0 0 54px;display:flex;flex-direction:column;align-items:center;gap:18px;
+  padding:14px 0;
+}
+.mbtn{
+  width:34px;height:34px;border-radius:50%;
+  display:grid;place-items:center;
+  color:var(--ink-2);font-size:15px;
+  transition:background .14s,color .14s,transform .14s;
+}
+.mbtn:hover{background:#f4f4f6;color:var(--ink)}
+.mbtn.on{color:var(--accent)}
+.mbtn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.mbtn .lbl{font-size:9px;margin-top:1px;letter-spacing:.02em}
+.mclose{margin-bottom:4px;font-size:17px}
+.mleft .spacer{margin-top:auto}
+
+/* 中：内容主体，可滚 */
+.mcenter{
+  flex:1 1 auto;min-width:0;
   display:flex;flex-direction:column;
+  border-right:1px solid var(--line);
+  overflow-y:auto;overscroll-behavior:contain;
 }
-.drawer.on{transform:none}
-.dhero{flex:0 0 auto}
-.dbody{flex:1 0 auto}
+.mhead{display:flex;align-items:center;gap:10px;padding:18px 22px 0}
+.mava{
+  width:40px;height:40px;border-radius:50%;flex:0 0 auto;
+  display:grid;place-items:center;
+  font-size:16px;font-weight:700;line-height:1;
+  background:hsl(var(--h) 62% 90%);color:hsl(var(--h) 50% 32%);
+  text-transform:uppercase;
+}
+.mwho{min-width:0;flex:1}
+.mwho b{display:block;font-size:14px;font-weight:600;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mwho span{display:block;font-size:11.5px;color:var(--ink-3);margin-top:1px}
+.follow{
+  flex:0 0 auto;height:30px;padding:0 15px;border-radius:999px;
+  font-size:12.5px;font-weight:600;
+  background:var(--accent);color:#fff;
+  transition:opacity .15s;
+}
+.follow:hover{opacity:.88}
 
-.dhero{
-  position:relative;overflow:hidden;
-  background:
-    radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 84% 97%) 0%, transparent 60%),
-    linear-gradient(158deg, hsl(var(--h) 56% 95%) 0%, hsl(calc(var(--h) + 34) 46% 90%) 100%);
+.mtext{padding:14px 22px 0}
+.mtitle{
+  margin:0;font-size:15px;font-weight:600;line-height:1.5;letter-spacing:-.01em;
+  word-break:break-word;
 }
-.dhero.is-img{aspect-ratio:16/6.6}
-/* 没图时头部只是一条色带：给关闭按钮一个落脚处，
-   不再重复摆一遍正文区已有的 README 摘录。 */
-.dhero.is-plain{height:96px}
-.dhero.is-doc{
-  display:flex;flex-direction:column;justify-content:center;
-  padding:24px 24px 26px;min-height:150px;
-}
-.dhero .snip{padding:22px 24px 30px}
-/* 同卡片：没有图时文字层要参与撑高 */
-.dhero.is-doc .snip{position:relative;inset:auto;padding:0;flex:0 0 auto}
-.dhero .snip::before{left:13px;top:22px;bottom:30px}
-.dhero.is-doc .snip::before{left:-13px;top:2px;bottom:2px}
-.dhero .rt{font-size:13px}
-.dhero .rp{font-size:13.5px;line-height:1.68;-webkit-line-clamp:3}
-.dhero.is-logo .shot{object-fit:contain;padding:28px}
-.dhero .fb{
-  position:absolute;left:24px;bottom:20px;
-  font-size:72px;font-weight:800;line-height:1;letter-spacing:-.05em;
-  color:hsl(var(--h) 52% 38%);opacity:.26;
-}
-.dclose{
-  position:absolute;right:14px;top:14px;z-index:4;
-  width:32px;height:32px;border-radius:50%;
-  background:rgba(255,255,255,.88);color:var(--ink);
-  display:grid;place-items:center;font-size:16px;
-  backdrop-filter:blur(8px);
-}
+.mdesc{margin:8px 0 0;font-size:13.5px;line-height:1.7;color:var(--ink-2)}
+.mtags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.mtags span{font-size:12px;color:#2b6cb0;cursor:default}
 
-/* README 摘录：抽屉里单独标出来，跟 GitHub 的 description 区分开 */
-.excerpt{
-  margin-top:14px;padding:12px 14px;border-radius:10px;
-  background:#fafafb;border-left:2px solid #e6e6ea;
+/* 大图：整个中栏的视觉主体 */
+.mfig{
+  margin:16px 22px 0;border-radius:12px;overflow:hidden;
+  background:#fafafb;
 }
-.rlabel{
-  display:block;font-size:10px;font-weight:700;letter-spacing:.14em;
-  color:var(--ink-3);
+.mfig img{width:100%;height:auto;max-height:52vh;object-fit:contain}
+.mfig.is-logo{display:grid;place-items:center;padding:28px;background:hsl(var(--h) 40% 97%)}
+.mfig.is-logo img{max-height:300px;object-fit:contain}
+
+/* 没有图：把 README 首段做成一块引文 */
+.mquote{
+  margin:16px 22px 0;padding:16px 18px;border-radius:12px;
+  background:hsl(var(--h) 40% 97%);
+  border-left:2px solid hsl(var(--h) 52% 70%);
 }
-.excerpt p{margin:6px 0 0;font-size:13px;line-height:1.72;color:var(--ink-2)}
-.excerpt h4{margin:7px 0 0;font-size:13.5px;font-weight:650;letter-spacing:-.01em}
-
-.dbody{padding:18px 22px 26px}
-.dhead{display:flex;align-items:flex-start;gap:12px}
-.dhead h2{margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em;word-break:break-all}
-.dhead .sub{margin-top:4px;font-size:12.5px;color:var(--ink-3)}
-.dhead .save{position:static;flex:0 0 auto;width:34px;height:34px;background:#f4f4f6}
-.dhead .save.on{background:#ffe9ec}
-.desc{margin:14px 0 0;font-size:13.5px;line-height:1.65;color:var(--ink-2)}
-
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0 0}
-.stats div{background:#fafafb;border-radius:10px;padding:10px 12px}
-.stats b{display:block;font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
-.stats span{font-size:11px;color:var(--ink-3)}
-
-.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
-.chips a{
-  padding:4px 10px;border-radius:999px;background:#f2f2f5;
-  font-size:11.5px;color:var(--ink-2);text-decoration:none;
+.mquote p{margin:0;font-size:14px;line-height:1.78;color:hsl(var(--h) 18% 24%)}
+.mrepo{
+  display:inline-flex;align-items:center;gap:6px;
+  margin-top:14px;font-size:12.5px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;
 }
-.facts{margin-top:16px;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:12.5px}
+.mpad{height:24px}
+
+/* 右：元信息，跟着内容一起滚，别单独滚 */
+.mright{
+  flex:0 0 356px;display:flex;flex-direction:column;
+  background:#fff;
+}
+.mrscroll{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:18px 20px 0}
+.mrtop{display:flex;align-items:center;gap:10px}
+.mrtop .mava{width:34px;height:34px;font-size:14px}
+.mrtop b{font-size:13.5px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrtop .follow{margin-left:auto;height:27px;padding:0 12px;font-size:12px;background:#f2f2f5;color:var(--ink)}
+.mrtop .follow:hover{background:#e8e8ec;opacity:1}
+
+.mrnote{margin:16px 0 0;font-size:13.5px;line-height:1.6;font-weight:500}
+.mrmeta{margin:8px 0 0;font-size:11.5px;color:var(--ink-3)}
+.mrline{height:1px;background:var(--line);margin:14px 0}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.grid2 div{background:#fafafb;border-radius:9px;padding:9px 11px}
+.grid2 b{display:block;font-size:14.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.grid2 span{font-size:10.5px;color:var(--ink-3)}
+
+.facts{margin:14px 0 0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}
 .facts dt{color:var(--ink-3)}
 .facts dd{margin:0;color:var(--ink-2);word-break:break-all}
 
-.dfoot{
-  position:sticky;bottom:0;
-  padding:14px 22px calc(14px + env(safe-area-inset-bottom));
-  background:linear-gradient(to top,#fff 70%,rgba(255,255,255,0));
-  display:flex;gap:10px;
+.mrfoot{
+  flex:0 0 auto;padding:12px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line);display:flex;gap:8px;
 }
 .btn{
-  flex:1;height:42px;border-radius:11px;
+  flex:1;height:38px;border-radius:10px;
   display:grid;place-items:center;
-  font-size:13.5px;font-weight:600;
+  font-size:13px;font-weight:600;
   background:var(--ink);color:#fff;
   transition:opacity .15s;
 }
@@ -306,23 +433,55 @@ body.dim .top{filter:brightness(.92)}
 }
 .fatal h3{margin:0 0 8px;font-size:15px}
 .fatal p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7}
-.fatal code{
-  display:block;margin-top:10px;padding:10px 12px;border-radius:8px;
-  background:#f7f7f8;font-size:12px;color:#8a4b00;word-break:break-all;
-}
 .empty{display:grid;place-items:center;min-height:46vh;color:var(--ink-3);font-size:13px;text-align:center;line-height:1.9}
 
 /* ── 窄屏 ─────────────────────────── */
+/* 侧栏先收成图标条，再窄就整条让位给内容（底部导航栏在手机上更合适，
+   但这一版先保证桌面和横屏平板，手机上收成 56px 图标条也够用）。 */
+@media (max-width:1100px){
+  :root{--side:64px}
+  .logo{padding:0 6px;margin-bottom:20px;justify-content:center}
+  .logo .lg{display:none}
+  .side{padding:18px 8px 14px}
+  .navitem{justify-content:center;padding:0;height:44px}
+  .navitem span{display:none}
+  .navitem i{position:absolute;margin:-16px 0 0 22px;font-size:10px}
+  .sidefoot{display:none}
+}
 @media (max-width:720px){
-  .top{height:52px;padding:0 14px;gap:12px}
-  .feed{padding:12px 12px 90px;gap:11px}
-  .col{gap:11px}
-  .body{padding:9px 10px 11px}
-  .body h3{font-size:13px}
-  .body p{font-size:12px;-webkit-line-clamp:2}
-  .dbody{padding:16px 16px 22px}
-  .dfoot{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
-  .stats{grid-template-columns:repeat(2,1fr)}
+  :root{--side:0px}
+  .side{
+    top:auto;bottom:0;left:0;right:0;width:100%;height:56px;
+    flex-direction:row;align-items:center;justify-content:center;gap:6px;
+    padding:0 10px;border-right:0;border-top:1px solid var(--line);
+  }
+  .logo{display:none}
+  .nav{flex-direction:row;gap:6px}
+  .navitem{width:auto;padding:0 22px;height:40px;gap:7px}
+  .navitem span{display:inline;font-size:12.5px}
+  .navitem i{position:static;margin:0}
+  .top{padding:12px 14px 8px}
+  .cats{padding:0 14px 8px;gap:2px;justify-content:flex-start}
+  .feed{padding:4px 14px 76px;gap:10px}
+  .col{gap:12px}
+  .cover.is-doc{min-height:96px}
+  .body{padding:7px 1px 0}
+  .body h3{font-size:12.5px}
+  .body p{font-size:11.5px;-webkit-line-clamp:2}
+
+  /* 浮层在小屏上就是整页 */
+  .modal{
+    left:0;top:0;transform:none;width:100%;height:100%;border-radius:0;
+    animation:none;flex-direction:column;
+  }
+  .mleft{
+    position:absolute;left:0;top:0;right:0;z-index:2;
+    flex-direction:row;justify-content:flex-end;
+    padding:8px 10px;gap:8px;
+  }
+  .mleft .spacer{display:none}
+  .mcenter{border-right:0;padding-top:44px;flex:1 1 auto}
+  .mright{display:none}
 }
 
 @media (prefers-reduced-motion:reduce){

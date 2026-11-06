@@ -8,23 +8,46 @@
 </head>
 <body>
 
-<header class="top">
-  <div class="brand"><span class="mark"></span><span>Flow</span></div>
-  <nav class="tabs">
-    <button class="tab on" data-view="feed">发现</button>
-    <button class="tab" data-view="saved">收藏<i id="savedn"></i></button>
+<aside class="side">
+  <div class="logo"><span class="mark"></span><span class="lg">Flow</span></div>
+
+  <nav class="nav">
+    <button class="navitem on" data-view="feed">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>
+      <span>发现</span>
+    </button>
+    <button class="navitem" data-view="saved">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3 4.6 13a4.8 4.8 0 0 1 6.8-6.8l.6.6.6-.6A4.8 4.8 0 0 1 19.4 13z"/></svg>
+      <span>收藏</span><i id="savedn"></i>
+    </button>
   </nav>
-  <div class="stat" id="pool"></div>
-</header>
 
-<main id="feed" class="feed"></main>
-<main id="savedview" class="feed" hidden></main>
+  <div class="sidefoot">
+    <div class="pool" id="pool"></div>
+  </div>
+</aside>
 
-<div id="hint" class="hint">正在打开本地库…</div>
-<div id="fatal" class="fatal" hidden></div>
+<div class="main">
+
+  <header class="top">
+    <div class="search">
+      <button class="plus" title="说明">＋</button>
+      <input id="q" type="search" placeholder="搜索项目、语言、话题" autocomplete="off" spellcheck="false">
+      <svg class="mag" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4"/><path d="m16 16 4.2 4.2"/></svg>
+    </div>
+  </header>
+
+  <nav class="cats" id="cats"></nav>
+
+  <main id="feed" class="feed"></main>
+  <main id="savedview" class="feed" hidden></main>
+
+  <div id="hint" class="hint">正在打开本地库…</div>
+  <div id="fatal" class="fatal" hidden></div>
+</div>
 
 <div id="mask" class="mask" hidden></div>
-<aside id="drawer" class="drawer" hidden></aside>
+<div id="modal" class="modal" hidden></div>
 
 <script type="module" src="app.js"></script>
 </body>
