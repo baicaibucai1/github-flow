@@ -53,6 +53,14 @@ function ago(iso) {
 // 所以三种形态共用一块地方：
 //   有图 → 铺图；图挂了或本来没图 → 露出底下的 README 摘录；
 //   连 README 都没有 → 退回首字母色块。
+// README 的标题多数就是项目名，下面已经有名字了，再写一遍是噪音。
+// 只有它比名字多说了点什么（"Learn Rust, one exercise at a time"）才值得当标题。
+function distinctTitle(r) {
+  const t = r.readme_title || "";
+  const n = r.name || "";
+  return t && t.toLowerCase() !== n.toLowerCase() && t.length > n.length + 3 ? t : "";
+}
+
 function coverHTML(r) {
   const h = hue(r.id);
   const letter = esc((r.name || "?")[0].toUpperCase());
@@ -60,9 +68,8 @@ function coverHTML(r) {
   const kind = r.cover_kind || "shot";
   const cls = hasImg ? `is-img is-${kind}` : r.readme_head || r.readme_title ? "is-doc" : "is-plain";
   // README 的标题多数就是项目名，下面已经有名字了，再写一遍是噪音。
-  // 只有它比名字多说了点什么（"Learn Rust, one exercise at a time"）才值得当标题。
-  const t = r.readme_title || "";
-  const showTitle = t && t.toLowerCase() !== (r.name || "").toLowerCase() && t.length > (r.name || "").length + 3;
+  const t = distinctTitle(r);
+  const showTitle = !!t;
   const img = hasImg
     ? `<img class="shot" src="${esc(r.cover_url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
     : "";
@@ -82,11 +89,26 @@ function coverHTML(r) {
 
 // README 首段和 GitHub 上的简介经常是同一句话。
 // 头部已经把它完整显示出来了，卡片底部再抄一遍就是重复。
-function redundant(desc, head) {
+//
+// 不能按前缀比：`Go client for Kubernetes.` 和 `Go clients for talking to a
+// kubernetes cluster.` 一个字都对不上，说的是同一件事。按词的重叠率才认得出来。
+function overlap(desc, head) {
+  const words = (s) =>
+    new Set(
+      s
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 1)
+        .map((w) => w.replace(/s$/, ""))
+    );
   if (!desc || !head) return false;
-  const n = (s) => s.toLowerCase().replace(/[\s\p{P}]/gu, "");
-  const a = n(desc).slice(0, 30);
-  return a.length >= 10 && n(head).includes(a);
+  const A = words(desc);
+  const B = words(head);
+  if (A.size < 3) return false;
+  let hit = 0;
+  for (const w of A) if (B.has(w)) hit++;
+  return hit / A.size >= 0.75;
 }
 
 function cardHTML(r) {
@@ -95,7 +117,7 @@ function cardHTML(r) {
     : "";
   // 头部没图时展示的就是 README 首段，底部再抄一遍简介就是重复。
   // 有图的卡片头被图盖住了，简介还得留着。
-  const dup = !r.cover_url && redundant(r.description, r.readme_head);
+  const dup = !r.cover_url && overlap(r.description, r.readme_head);
   const desc = dup ? "" : r.description || r.readme_head || "这个项目没有写描述";
   return `<article class="card" data-id="${r.id}">
   ${coverHTML(r)}
@@ -194,25 +216,23 @@ function detailHTML(r) {
     .map((t) => `<span class="chip">${esc(t)}</span>`)
     .join("");
   const letter = esc((r.name || "?")[0].toUpperCase());
-  const hero = r.cover_url
+  // 抽屉里正文区已经有「README」区块了，头部再放一遍摘录就是同一段话说两遍。
+  // 所以没图的时候头部退回色带 + 首字母，只负责给关闭按钮一个落脚处。
+  const hasImg = !!r.cover_url;
+  const hero = hasImg
     ? `<img class="shot" src="${esc(r.cover_url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
-    : r.readme_title || r.readme_head
-      ? `<div class="snip">
-          ${r.readme_title ? `<div class="rt">${esc(r.readme_title)}</div>` : ""}
-          ${r.readme_head ? `<p class="rp">${esc(r.readme_head)}</p>` : ""}
-        </div>`
-      : `<span class="fb">${letter}</span>`;
+    : `<span class="fb">${letter}</span>`;
 
   // 描述和 README 首段经常是同一句话，重复摆两遍显得很傻
-  const dup = r.description && r.readme_head && r.description.slice(0, 24) === r.readme_head.slice(0, 24);
-  const excerpt =
-    r.readme_head && !dup
-      ? `<div class="excerpt"><span class="rlabel">README</span><p>${esc(r.readme_head)}</p></div>`
-      : r.readme_title
-        ? `<div class="excerpt"><span class="rlabel">README</span><h4>${esc(r.readme_title)}</h4></div>`
-        : "";
+  const dup = overlap(r.description, r.readme_head);
+  const t = distinctTitle(r);
+  const excerpt = r.readme_head && !dup
+    ? `<div class="excerpt"><span class="rlabel">README</span><p>${esc(r.readme_head)}</p></div>`
+    : t
+      ? `<div class="excerpt"><span class="rlabel">README</span><h4>${esc(t)}</h4></div>`
+      : "";
 
-  return `<div class="dhero ${r.cover_url ? "is-img is-" + (r.cover_kind || "shot") : "is-doc"}" style="--h:${h}">
+  return `<div class="dhero ${hasImg ? "is-img is-" + (r.cover_kind || "shot") : "is-plain"}" style="--h:${h}">
   ${hero}
   <button class="dclose" data-act="close" title="关闭">✕</button>
 </div>

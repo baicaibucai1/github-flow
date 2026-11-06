@@ -72,10 +72,12 @@ img{display:block}
     linear-gradient(158deg, hsl(var(--h) 58% 90%) 0%, hsl(calc(var(--h) + 34) 50% 83%) 100%);
 }
 .cover.is-img{aspect-ratio:16/10}
-/* 只有一行标题的 README 也得撑住，否则头部会变成一条 60px 的窄条 */
+/* 只有一行标题的 README 也得撑住，否则头部会变成一条 60px 的窄条。
+   但撑到 130 又太贪：正文只有两行的卡会空出一大块。
+   文字一律靠上排——左侧那条竖线是从顶拉到底的，居中的话会和文字对不上。 */
 .cover.is-doc{
-  display:flex;flex-direction:column;justify-content:center;
-  min-height:130px;padding:14px 15px 26px 20px;
+  display:flex;flex-direction:column;justify-content:flex-start;
+  min-height:104px;padding:14px 15px 26px 20px;
 }
 .cover.is-plain{padding-bottom:62%}
 
@@ -214,7 +216,9 @@ body.dim .top{filter:brightness(.92)}
     linear-gradient(158deg, hsl(var(--h) 56% 95%) 0%, hsl(calc(var(--h) + 34) 46% 90%) 100%);
 }
 .dhero.is-img{aspect-ratio:16/6.6}
-.dhero.is-plain{padding-bottom:44%}
+/* 没图时头部只是一条色带：给关闭按钮一个落脚处，
+   不再重复摆一遍正文区已有的 README 摘录。 */
+.dhero.is-plain{height:96px}
 .dhero.is-doc{
   display:flex;flex-direction:column;justify-content:center;
   padding:24px 24px 26px;min-height:150px;
