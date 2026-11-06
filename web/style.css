@@ -1,0 +1,247 @@
+:root{
+  --bg:#f7f7f8;
+  --card:#fff;
+  --ink:#141414;
+  --ink-2:#5c5c61;
+  --ink-3:#9a9aa1;
+  --line:#ececef;
+  --accent:#ff2e4d;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(15,15,20,.05), 0 4px 14px rgba(15,15,20,.04);
+  --shadow-lift:0 6px 22px rgba(15,15,20,.10);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+img{display:block}
+
+/* ── 顶栏 ─────────────────────────── */
+.top{
+  position:sticky;top:0;z-index:10;
+  display:flex;align-items:center;gap:18px;
+  height:56px;padding:0 22px;
+  background:rgba(247,247,248,.86);
+  backdrop-filter:saturate(180%) blur(14px);
+  -webkit-backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid rgba(0,0,0,.05);
+}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:-.02em;font-size:16px}
+.mark{
+  width:16px;height:16px;border-radius:5px;
+  background:conic-gradient(from 210deg, #ff2e4d, #ff8a3d, #ffd23d, #34d399, #3b82f6, #a855f7, #ff2e4d);
+}
+.tabs{display:flex;gap:4px}
+.tab{
+  padding:6px 13px;border-radius:999px;font-size:13px;color:var(--ink-2);
+  transition:background .15s,color .15s;
+}
+.tab:hover{background:rgba(0,0,0,.04)}
+.tab.on{background:var(--ink);color:#fff}
+.tab i{font-style:normal;font-size:11px;opacity:.6;margin-left:4px}
+.stat{margin-left:auto;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+/* ── 瀑布流 ───────────────────────── */
+.feed{display:flex;align-items:flex-start;gap:14px;padding:18px 22px 80px}
+.col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:14px}
+
+.card{
+  background:var(--card);border-radius:var(--radius);overflow:hidden;
+  box-shadow:var(--shadow);cursor:pointer;min-width:0;
+  transition:transform .18s ease, box-shadow .18s ease;
+  animation:rise .34s cubic-bezier(.22,.8,.3,1) both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+
+/* 封面不用截图、不用网络：色相由项目 id 决定，叠一层网格纹理和首字母。
+   这样 3500 张卡各有各的颜色，又完全不依赖外部图片 —— 断网也好看。 */
+.cover{
+  position:relative;padding-bottom:64%;overflow:hidden;
+  background:
+    radial-gradient(circle at 26% 16%, hsl(var(--h) 95% 88%) 0%, transparent 60%),
+    linear-gradient(135deg, hsl(var(--h) 74% 85%) 0%, hsl(calc(var(--h) + 46) 66% 74%) 100%);
+}
+.cover::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
+  background-size:24px 24px;
+  mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.12));
+  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.12));
+}
+.cover .fb{
+  position:absolute;left:16px;top:50%;transform:translateY(-56%);
+  font-size:62px;font-weight:800;line-height:1;letter-spacing:-.05em;
+  color:hsl(var(--h) 62% 30%);opacity:.3;
+}
+/* 右下角的星数：让色块不只是一块颜色，扫过去能读到量级 */
+.cover .cnt{
+  position:absolute;right:12px;bottom:10px;z-index:1;
+  font-size:19px;font-weight:700;letter-spacing:-.02em;
+  color:hsl(var(--h) 58% 26%);opacity:.55;
+  font-variant-numeric:tabular-nums;
+}
+.cover .cnt i{font-size:10px;font-style:normal;font-weight:600;opacity:.7;margin-left:2px}
+.cover .tag{
+  position:absolute;left:12px;bottom:12px;z-index:1;
+  padding:3px 9px;border-radius:999px;
+  font-size:11px;color:#fff;
+  background:rgba(15,15,20,.5);
+  backdrop-filter:blur(6px);
+}
+.save{
+  position:absolute;right:9px;top:9px;z-index:2;
+  width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;
+  background:rgba(255,255,255,.82);
+  backdrop-filter:blur(6px);
+  color:#b9b9c0;font-size:15px;line-height:1;
+  transition:transform .16s, color .16s, background .16s;
+}
+.save:hover{transform:scale(1.08);color:var(--accent)}
+.save.on{color:var(--accent);background:#fff}
+
+.body{padding:10px 12px 12px;min-width:0;overflow:hidden}
+.body h3{
+  margin:0 0 4px;font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.body p{
+  margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.meta{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:11.5px;color:var(--ink-3)}
+.meta .lang{display:inline-flex;align-items:center;gap:5px}
+.meta .d{width:7px;height:7px;border-radius:50%;background:currentColor}
+.meta .star{color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+/* ── 抽屉 ─────────────────────────── */
+/* 遮罩用 display 控制而不是 opacity 过渡：
+   抽屉是唯一需要的动效，遮罩跟着做过渡反而容易出现"点了没反应"的错觉 */
+/* 层级用「底下的内容变暗」来表达，而不是盖一层黑。
+   盖层在无头渲染里容易整块不绘制，而 filter 走的是另一条绘制路径，更稳。
+   mask 本身只保留透明点击区，用来点外部关闭。 */
+.mask{position:fixed;inset:0;z-index:15;display:none}
+.mask.show{display:block}
+body.dim .feed{filter:brightness(.6) saturate(.85)}
+body.dim .top{filter:brightness(.92)}
+.drawer{
+  position:fixed;top:0;right:0;z-index:20;
+  width:min(560px,94vw);height:100%;
+  background:#fff;
+  box-shadow:-10px 0 40px rgba(15,15,20,.16);
+  transform:translateX(100%);
+  transition:transform .28s cubic-bezier(.32,.72,.28,1);
+  overflow-y:auto;overscroll-behavior:contain;
+}
+.drawer.on{transform:none}
+
+.dhero{
+  position:relative;padding-bottom:44%;overflow:hidden;
+  background:
+    radial-gradient(circle at 24% 20%, hsl(var(--h) 88% 91%) 0%, transparent 60%),
+    linear-gradient(135deg, hsl(var(--h) 76% 92%) 0%, hsl(calc(var(--h) + 46) 68% 85%) 100%);
+}
+.dhero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.45) 1px, transparent 1px);
+  background-size:28px 28px;
+  mask-image:linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.15));
+  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.8), rgba(0,0,0,.15));
+}
+.dhero .fb{
+  position:absolute;left:24px;bottom:20px;
+  font-size:72px;font-weight:800;line-height:1;letter-spacing:-.05em;
+  color:hsl(var(--h) 52% 38%);opacity:.26;
+}
+.dclose{
+  position:absolute;right:14px;top:14px;z-index:2;
+  width:32px;height:32px;border-radius:50%;
+  background:rgba(255,255,255,.88);color:var(--ink);
+  display:grid;place-items:center;font-size:16px;
+  backdrop-filter:blur(8px);
+}
+
+.dbody{padding:18px 22px 26px}
+.dhead{display:flex;align-items:flex-start;gap:12px}
+.dhead h2{margin:0;font-size:19px;font-weight:700;letter-spacing:-.02em;word-break:break-all}
+.dhead .sub{margin-top:4px;font-size:12.5px;color:var(--ink-3)}
+.dhead .save{position:static;flex:0 0 auto;width:34px;height:34px;background:#f4f4f6}
+.dhead .save.on{background:#ffe9ec}
+.desc{margin:14px 0 0;font-size:13.5px;line-height:1.65;color:var(--ink-2)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0 0}
+.stats div{background:#fafafb;border-radius:10px;padding:10px 12px}
+.stats b{display:block;font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.stats span{font-size:11px;color:var(--ink-3)}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
+.chips a{
+  padding:4px 10px;border-radius:999px;background:#f2f2f5;
+  font-size:11.5px;color:var(--ink-2);text-decoration:none;
+}
+.facts{margin-top:16px;display:grid;grid-template-columns:auto 1fr;gap:7px 16px;font-size:12.5px}
+.facts dt{color:var(--ink-3)}
+.facts dd{margin:0;color:var(--ink-2);word-break:break-all}
+
+.dfoot{
+  position:sticky;bottom:0;
+  padding:14px 22px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,#fff 70%,rgba(255,255,255,0));
+  display:flex;gap:10px;
+}
+.btn{
+  flex:1;height:42px;border-radius:11px;
+  display:grid;place-items:center;
+  font-size:13.5px;font-weight:600;
+  background:var(--ink);color:#fff;
+  transition:opacity .15s;
+}
+.btn:hover{opacity:.88}
+.btn.ghost{background:#f2f2f5;color:var(--ink)}
+
+/* ── 状态 ─────────────────────────── */
+.hint{
+  display:flex;align-items:center;justify-content:center;
+  min-height:52vh;color:var(--ink-3);font-size:13px;
+}
+.fatal{
+  max-width:560px;margin:80px auto;padding:24px 26px;
+  background:#fff;border-radius:var(--radius);
+  box-shadow:var(--shadow);border-left:3px solid var(--accent);
+}
+.fatal h3{margin:0 0 8px;font-size:15px}
+.fatal p{margin:0;font-size:13px;color:var(--ink-2);line-height:1.7}
+.fatal code{
+  display:block;margin-top:10px;padding:10px 12px;border-radius:8px;
+  background:#f7f7f8;font-size:12px;color:#8a4b00;word-break:break-all;
+}
+.empty{display:grid;place-items:center;min-height:46vh;color:var(--ink-3);font-size:13px;text-align:center;line-height:1.9}
+
+/* ── 窄屏 ─────────────────────────── */
+@media (max-width:720px){
+  .top{height:52px;padding:0 14px;gap:12px}
+  .feed{padding:12px 12px 90px;gap:11px}
+  .col{gap:11px}
+  .body{padding:9px 10px 11px}
+  .body h3{font-size:13px}
+  .body p{font-size:12px;-webkit-line-clamp:2}
+  .dbody{padding:16px 16px 22px}
+  .dfoot{padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}

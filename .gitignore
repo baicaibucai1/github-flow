@@ -1,0 +1,25 @@
+# 构建产物
+/target
+/app/target
+/build
+node_modules/
+
+# 运行时数据（数据库在 %APPDATA%\flow，不进仓库）
+# 注意：/app/seed.db 是随包发布的种子库，属于产品数据，必须入库，
+# 所以这里只排除 WAL/SHM，不排除 *.db
+*.db-shm
+*.db-wal
+/tmp/
+!app/seed.db
+
+# 本地令牌，绝不入库
+token.txt
+config.local.json
+.env
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Flow 运行所需的最小权限集。自定义命令不在 ACL 里，默认放行；这里只声明 core 的基础能力。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
