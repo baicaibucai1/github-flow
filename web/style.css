@@ -211,6 +211,9 @@ img{display:block}
 .shot.ok{display:block}
 .shot.broken{display:none}
 .card:hover .cover .shot{transform:scale(1.03)}
+/* 超宽横幅不裁：裁完只剩中间几个字，读出来是「One API ke」这种断词。
+   完整塞进去，上下留一点底色，比断字体面。 */
+.cover.is-wide .shot{object-fit:contain}
 /* 图标类不裁切，留白居中，否则一个方形 logo 会被裁得只剩中间一截 */
 .cover.is-logo .shot{
   object-fit:contain;padding:20px;

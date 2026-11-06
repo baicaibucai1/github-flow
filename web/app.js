@@ -67,7 +67,14 @@ function coverHTML(r) {
   const letter = esc((r.name || "?")[0].toUpperCase());
   const hasImg = !!r.cover_url;
   const kind = r.cover_kind || "shot";
-  const cls = hasImg ? `is-img is-${kind}` : r.readme_head || r.readme_title ? "is-doc" : "is-plain";
+  // 宽高比超过 2.2 的图（1175 张里有两百来张）塞进 16:10 会把左右裁掉，
+  // `One account. One API ke...` 这种断字比图小一圈更难看，改成完整显示。
+  const wide = hasImg && r.cover_h > 0 && r.cover_w > r.cover_h * 2.2;
+  const cls = hasImg
+    ? `is-img is-${kind}${wide ? " is-wide" : ""}`
+    : r.readme_head || r.readme_title
+      ? "is-doc"
+      : "is-plain";
   const t = distinctTitle(r);
   const showTitle = !!t;
   const img = hasImg
