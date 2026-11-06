@@ -175,13 +175,17 @@ function estimate(r, colW) {
   const chars = (r.description || "").length;
   const per = Math.max(10, Math.floor(colW / 7));
   const lines = Math.min(2, Math.max(1, Math.ceil(chars / per)));
-  // 头部高度：有图是固定 4:3；只有文字时按行数估；两者都没有才是首字母色块。
-  const cover = r.cover_url
-    ? colW * 0.75
-    : r.readme_head
-      ? 100 + Math.min(5, Math.ceil((r.readme_head.length || 0) / Math.max(12, Math.floor(colW / 7)))) * 20
-      : colW;
-  return cover + 9 + 20 + lines * 18 + 26;
+  // 头部：有图是 16:10；有 README 文字时按行数估，再拿 min-height 兜一下；
+  // 什么都没有才是纯色块，也按 16:10 走。
+  const cover =
+    r.cover_url || !r.readme_head
+      ? colW * 0.625
+      : Math.max(
+          104,
+          40 + 18 + Math.min(4, Math.ceil((r.readme_head.length || 0) / Math.max(12, Math.floor(colW / 7)))) * 20
+        );
+  // 卡内正文：上下内边距 22 + 标题一行 20 + 简介若干行 + 底部作者行 26
+  return cover + 22 + 20 + lines * 19 + 3 + 26;
 }
 
 // 按估算高度投到最矮的一列。
@@ -399,8 +403,11 @@ async function flipSave(id) {
 
 // 图片加载成功才淡入；失败就把 <img> 藏掉，露出底下那层 README 摘录。
 // 全程不依赖内联 onerror —— CSP 不允许内联脚本。
+// 成功时要连 .cover 一起标记：文字层靠这个 class 才敢让位（见 style.css）。
 document.addEventListener("load", (e) => {
-  if (e.target.tagName === "IMG") e.target.classList.add("ok");
+  if (e.target.tagName !== "IMG") return;
+  e.target.classList.add("ok");
+  e.target.closest(".cover")?.classList.add("ok");
 }, true);
 document.addEventListener("error", (e) => {
   if (e.target.tagName !== "IMG") return;

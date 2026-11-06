@@ -125,63 +125,68 @@ img{display:block}
 }
 
 /* ── 瀑布流 ───────────────────────── */
-/* 卡片不再有白底和阴影：图片本身就是卡片，文字直接落在灰底上。
-   这是小红书那个流派的关键 —— 有容器就会显得"一格一格的"，
-   没有容器整片才连得起来。 */
+/* 每张卡是一整块：白底 + 圆角 + 很浅的投影，头部和文字都在这块里面。
+   之前去掉过白底，让文字直接落在灰页面上（照小红书那样），但库里
+   3500 个项目只有三分之一有 README 配图，一屏下来大半是"悬空的文字"，
+   看着像渲染没完成。所以改回整卡：图和无图都长在同一个容器里。 */
 .feed{display:flex;align-items:flex-start;gap:14px;padding:6px 32px 90px}
 .col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:16px}
 
 .card{
   min-width:0;cursor:pointer;
-  animation:rise .34s cubic-bezier(.22,.8,.3,1) both;
+  background:var(--card);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  transition:transform .22s ease, box-shadow .22s ease;
+  /* 用 backwards 而不是 both：both 会让 to{transform:none} 一直生效，
+     把 :hover 的 translateY 压掉，鼠标划过整张卡就不会浮起来。 */
+  animation:rise .34s cubic-bezier(.22,.8,.3,1) backwards;
 }
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.card .cover{transition:transform .22s ease, box-shadow .22s ease}
-.card:hover .cover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lift)}
 
 /* 头部展示「项目自己怎么写自己」：README 的首图，没有图就是首段。
    图片来自外网，可能加载失败，所以文字层不是兜底样式，而是另一种正式形态——
    两种都必须好看，否则断网时整个流就塌了。
-   色相由项目 id 决定，保证相邻两张不撞色。 */
+   色相由项目 id 决定，保证相邻两张不撞色。
+   圆角由 .card 的 overflow:hidden 统一裁，这里不再自己设。 */
 .cover{
   position:relative;overflow:hidden;isolation:isolate;
-  border-radius:var(--radius);
   background:
-    radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 84% 94%) 0%, transparent 62%),
-    linear-gradient(158deg, hsl(var(--h) 58% 90%) 0%, hsl(calc(var(--h) + 34) 50% 83%) 100%);
+    radial-gradient(120% 100% at 4% 0%, hsl(var(--h) 78% 96%) 0%, transparent 62%),
+    linear-gradient(158deg, hsl(var(--h) 54% 93%) 0%, hsl(calc(var(--h) + 34) 46% 87%) 100%);
 }
 .cover.is-img{aspect-ratio:16/10}
 /* 只有一行标题的 README 也得撑住，否则头部会变成一条 60px 的窄条。
-   但撑到 130 又太贪：正文只有两行的卡会空出一大块。
-   文字一律靠上排——左侧那条竖线是从顶拉到底的，居中的话会和文字对不上。 */
+   但撑太高又太贪：正文只有两行的卡会空出一大块。
+   min-height 兜底，内容比它矮时垂直居中 —— 靠上排的话，一句话的卡
+   底下会空出半截色带，看着像没加载完。
+   左右内边距和 .body 对齐，标题、正文、作者头像落在同一条竖线上。 */
 .cover.is-doc{
-  display:flex;flex-direction:column;justify-content:flex-start;
-  min-height:112px;padding:15px 15px 27px 20px;
+  display:flex;flex-direction:column;justify-content:center;
+  min-height:104px;padding:14px 14px 26px;
 }
-.cover.is-plain{padding-bottom:100%}
+.cover.is-plain{padding-bottom:62.5%}
 
 /* 文字层：一条细竖线 + 标题 + 首段，像一页被截断的 README */
 .snip{
   position:absolute;inset:0;z-index:0;
   display:flex;flex-direction:column;gap:5px;
-  padding:15px 16px 32px 18px;overflow:hidden;
+  padding:14px 14px 26px;overflow:hidden;
 }
 .is-plain .snip{display:none}
-/* 图片正常时彻底关掉文字层：README 里的 PNG 相当一部分是透明底 logo，
+/* 图片*加载成功之后*才关掉文字层。README 里的 PNG 相当一部分是透明底 logo，
    只靠 z-index 盖不住，文字会从图里透出来，看起来像两段话压在一起。
-   图片加载失败时 .broken 会加在 .cover 上，那时文字层自动回来。 */
-.cover.is-img:not(.broken) .snip{display:none}
+   但反过来，一上来就藏掉也不行：懒加载的图要等几百毫秒到几秒，
+   那段时间卡片头部就是一块空色带。所以先让文字顶着，图到了再换。 */
+.cover.is-img.ok .snip{display:none}
 /* 没有图的时候，文字层就是封面本身，必须撑开高度 ——
    如果它也绝对定位，整个头部会塌成一条 padding。 */
 .cover.is-doc .snip{
   position:relative;inset:auto;
   padding:0;gap:4px;flex:0 0 auto;
 }
-.snip::before{
-  content:"";position:absolute;left:9px;top:15px;bottom:32px;width:2px;border-radius:2px;
-  background:hsl(var(--h) 62% 50% / .34);
-}
-.cover.is-doc .snip::before{left:-11px;top:1px;bottom:2px}
 .rt{
   font-size:13px;font-weight:700;line-height:1.34;letter-spacing:-.015em;
   color:hsl(var(--h) 46% 20%);opacity:.86;
@@ -212,8 +217,19 @@ img{display:block}
 .shot.broken{display:none}
 .card:hover .cover .shot{transform:scale(1.03)}
 /* 超宽横幅不裁：裁完只剩中间几个字，读出来是「One API ke」这种断词。
-   完整塞进去，上下留一点底色，比断字体面。 */
+   完整塞进去，上下留一点底色，比断字体面。
+   底色必须中性：横幅本身有大面积纯色，再垫一层项目色相会变成两块颜色打架。 */
+.cover.is-wide{background:#f7f7f9}
 .cover.is-wide .shot{object-fit:contain}
+/* 图片挂了就退回文字形态，而且不能再按 16:10 卡死高度：
+   固定比例的框装不下四行摘录，底下会被裁掉半行。让它跟着文字长。 */
+.cover.is-img.broken{
+  aspect-ratio:auto;min-height:104px;
+  display:flex;flex-direction:column;justify-content:center;
+  padding:14px 14px 26px;
+}
+.cover.is-img.broken .snip{position:relative;inset:auto;padding:0;flex:0 0 auto}
+
 /* 图标类不裁切，留白居中，否则一个方形 logo 会被裁得只剩中间一截 */
 .cover.is-logo .shot{
   object-fit:contain;padding:20px;
@@ -238,7 +254,7 @@ img{display:block}
 
 /* 星数：文字形态里当量级读，图片形态里压成小药丸，别挡住图 */
 .cnt{
-  position:absolute;right:10px;bottom:9px;z-index:2;
+  position:absolute;right:10px;bottom:10px;z-index:2;
   display:inline-flex;align-items:baseline;gap:2px;
   font-size:16px;font-weight:700;letter-spacing:-.02em;
   color:hsl(var(--h) 58% 26%);opacity:.5;
@@ -258,7 +274,8 @@ img{display:block}
   color:hsl(var(--h) 38% 28%);opacity:.3;
 }
 
-.body{padding:9px 2px 0;min-width:0}
+/* 文字落在这块白底上，左右留出和头部对齐的边距 */
+.body{padding:10px 14px 12px;min-width:0}
 .body h3{
   margin:0;font-size:13.5px;font-weight:600;line-height:1.45;letter-spacing:-.005em;
   word-break:break-word;
@@ -467,8 +484,8 @@ body.dim{overflow:hidden}
   .cats{padding:0 14px 8px;gap:2px;justify-content:flex-start}
   .feed{padding:4px 14px 76px;gap:10px}
   .col{gap:12px}
-  .cover.is-doc{min-height:96px}
-  .body{padding:7px 1px 0}
+  .cover.is-doc{min-height:92px;padding:12px 11px 24px}
+  .body{padding:8px 11px 10px}
   .body h3{font-size:12.5px}
   .body p{font-size:11.5px;-webkit-line-clamp:2}
 
