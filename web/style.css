@@ -315,7 +315,7 @@ body.dim{overflow:hidden}
 .modal{
   position:fixed;z-index:50;
   left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(1080px,94vw);
+  width:min(1200px,96vw);
   /* 高度跟着内容走，只封顶。写死 760px 的话，没有封面图的项目
      正文只有三行，底下会空出一大片，看着像没加载完。 */
   height:auto;max-height:min(760px,90vh);
@@ -351,6 +351,10 @@ body.dim{overflow:hidden}
   border-right:1px solid var(--line);
   overflow-y:auto;overscroll-behavior:contain;
 }
+/* 内容比浮层高的时候，flex 默认会把子块压扁——封面图就是这么变成 0 高
+   被 overflow:hidden 裁掉的（img 有 270px，父容器 0）。全部锁死不收缩，
+   超出的部分交给上面的 overflow-y:auto 滚。 */
+.mcenter>*{flex:0 0 auto}
 .mhead{display:flex;align-items:center;gap:10px;padding:18px 22px 0}
 .mava{
   width:40px;height:40px;border-radius:50%;flex:0 0 auto;
@@ -401,6 +405,90 @@ body.dim{overflow:hidden}
   font-variant-numeric:tabular-nums;
 }
 .mpad{height:24px}
+
+/* README 与文件树：详情页的两个新增区块。
+   都是「标题条 + 内容」的结构，标题条用浅灰底跟正文分开。 */
+.msec{margin:18px 0 0;border-top:1px solid var(--line)}
+.msec-h{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 22px 10px;font-size:12px;font-weight:650;
+  color:var(--ink-3);letter-spacing:.02em;
+}
+.msec-h span{text-transform:uppercase}
+.msec-h b{margin-left:auto;font-size:11px;font-weight:500;color:var(--ink-3)}
+.msec-b{padding:0 22px 4px}
+.mload{font-size:12.5px;color:var(--ink-3);padding:6px 0 12px}
+.mfail{font-size:12.5px;color:#9a6b3f;background:#fdf6ec;border-radius:8px;padding:9px 12px;margin:2px 0 14px;line-height:1.6}
+
+/* README 正文：第三方内容，字号压一档、颜色压一档，
+   免得把上面的项目简介比下去。 */
+.md{font-size:13px;line-height:1.78;color:var(--ink-2);padding-bottom:10px;word-break:break-word}
+/* 默认只露一屏多，底部压一层渐隐，告诉用户「下面还有」 */
+.md.fold{max-height:1080px;overflow:hidden;position:relative;padding-bottom:0}
+.md.fold::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:110px;
+  background:linear-gradient(to bottom,rgba(255,255,255,0),#fff 85%);
+  pointer-events:none;
+}
+.mexpand{
+  display:block;width:100%;margin:2px 0 12px;padding:9px;
+  font-size:12.5px;font-weight:600;color:var(--ink-2);
+  background:#f7f7f9;border-radius:9px;
+  transition:background .14s;
+  /* 吸在可见区底部：不然按钮躺在 1080px 之下，得先滚到底才发现有它 */
+  position:sticky;bottom:6px;z-index:3;
+  box-shadow:0 0 0 6px #fff;
+}
+.mexpand:hover{background:#f0f0f3}
+.md>*:first-child{margin-top:0}
+.md h1,.md h2,.md h3,.md h4{
+  margin:22px 0 8px;font-weight:650;color:var(--ink);
+  line-height:1.45;letter-spacing:-.01em;
+}
+.md h1{font-size:17px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.md h2{font-size:15px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.md h3{font-size:14px}
+.md h4{font-size:13px}
+.md p{margin:10px 0}
+.md a{color:#2b6cb0;text-decoration:none;border-bottom:1px solid rgba(43,108,176,.25)}
+.md a:hover{border-bottom-color:#2b6cb0}
+.md strong{color:var(--ink);font-weight:650}
+.md img{max-width:100%;max-height:340px;height:auto;border-radius:8px;margin:10px 0;background:#fafafb}
+.md code{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.88em;
+  background:#f2f2f5;border-radius:5px;padding:1.5px 5px;color:#b13a5c;
+}
+.md pre{
+  margin:12px 0;padding:12px 14px;border-radius:10px;overflow-x:auto;
+  background:#f7f7f9;border:1px solid var(--line);
+}
+.md pre code{background:none;padding:0;color:var(--ink-2);font-size:12px;line-height:1.65}
+.md ul,.md ol{margin:10px 0;padding-left:22px}
+.md li{margin:4px 0}
+.md blockquote{
+  margin:12px 0;padding:8px 14px;border-left:3px solid var(--line);
+  color:var(--ink-3);background:#fafafb;border-radius:0 8px 8px 0;
+}
+.md blockquote p{margin:4px 0}
+.md hr{margin:18px 0;border:0;border-top:1px solid var(--line)}
+.md table{border-collapse:collapse;width:100%;font-size:12px}
+.md th,.md td{border:1px solid var(--line);padding:6px 9px;text-align:left}
+.md th{background:#fafafb;font-weight:600;color:var(--ink)}
+.mdtable{margin:12px 0;overflow-x:auto}
+
+/* 文件树：缩进靠 --d，比嵌套 ul 好控 */
+.mtree{padding-bottom:14px}
+.tf{
+  display:flex;align-items:center;gap:7px;
+  padding:3.5px 0;font-size:12.5px;color:var(--ink-2);
+  padding-left:calc(var(--d, 0) * 13px);
+  font-variant-numeric:tabular-nums;
+}
+.tf i{flex:0 0 12px;font-size:10px;color:var(--ink-3);font-style:normal;text-align:center}
+.tf span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf.is-dir{color:var(--ink);font-weight:600}
+.tf.is-dir i{color:var(--accent)}
+.tf.more{color:var(--ink-3);font-size:11.5px;padding-top:8px}
 
 /* 右：元信息，跟着内容一起滚，别单独滚 */
 .mright{
@@ -501,7 +589,14 @@ body.dim{overflow:hidden}
   }
   .mleft .spacer{display:none}
   .mcenter{border-right:0;padding-top:44px;flex:1 1 auto}
-  .mright{display:none}
+  /* 小屏上右栏不再隐藏：文件树和统计数字挪到中栏末尾接着排，
+     否则「右侧显示文件树」这条在小屏上就彻底不存在了 */
+  .mright{
+    display:flex;flex:0 0 auto;border-top:1px solid var(--line);
+    background:#fafafb;
+  }
+  .mright .mrscroll{max-height:none}
+  .mrfoot{position:sticky;bottom:0;background:#fff}
 }
 
 @media (prefers-reduced-motion:reduce){

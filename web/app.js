@@ -270,6 +270,211 @@ function buildCats() {
 
 /* ── 详情浮层 ───────────────────────── */
 
+/* ── README 渲染 ─────────────────────── */
+
+// README 是别人写的 markdown，什么都可能有：表格、代码块、嵌套列表、裸 HTML。
+// 这里只覆盖读得懂的部分，读不懂的按普通段落走。
+// 安全上只有一条铁律：**先把整行 HTML 转义，再按 markdown 结构还原标签**。
+// 顺序反了的话，README 里藏一个 <script> 就能在应用里执行。
+function md(src, opt = {}) {
+  const base = opt.base || "";
+  const abs = opt.abs || "";
+  const lines = String(src || "").replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let para = [];
+  let list = null;
+  let fence = null;
+  let table = null;
+
+  const inline = (s) => inlineMd(s, base, abs);
+  const flushPara = () => {
+    if (para.length) {
+      out.push(`<p>${inline(para.join(" "))}</p>`);
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (list) {
+      out.push(
+        `<${list.tag}>` +
+          list.items.map((t) => `<li>${inline(t)}</li>`).join("") +
+          `</${list.tag}>`
+      );
+      list = null;
+    }
+  };
+  const flushTable = () => {
+    if (table) {
+      const head = `<tr>${table.head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr>`;
+      const body = table.rows
+        .map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
+        .join("");
+      out.push(`<div class="mdtable"><table>${head}${body}</table></div>`);
+      table = null;
+    }
+  };
+  const flushAll = () => {
+    flushPara();
+    flushList();
+    flushTable();
+  };
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+
+    if (fence) {
+      if (/^\s*```/.test(line)) {
+        out.push(`<pre><code>${esc(fence.buf.join("\n"))}</code></pre>`);
+        fence = null;
+      } else {
+        fence.buf.push(raw);
+      }
+      continue;
+    }
+    const fm = line.match(/^\s*```\s*(\S*)/);
+    if (fm) {
+      flushAll();
+      fence = { lang: fm[1] || "", buf: [] };
+      continue;
+    }
+    if (!line.trim()) {
+      flushAll();
+      continue;
+    }
+
+    // 分隔线：--- / *** / ___，但别把表格的分隔行吃掉
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushAll();
+      out.push("<hr>");
+      continue;
+    }
+
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flushAll();
+      const lv = Math.min(h[1].length, 4);
+      out.push(`<h${lv}>${inline(h[2].replace(/\s*#+\s*$/, ""))}</h${lv}>`);
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      flushAll();
+      const t = line.replace(/^\s*>\s?/, "");
+      out.push(`<blockquote>${inline(t)}</blockquote>`);
+      continue;
+    }
+
+    // 表格：表头行 + 一行 ---|---
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      const cells = line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      const isSep = cells.every((c) => /^:?-{2,}:?$/.test(c) || c === "");
+      if (isSep && table) {
+        table.head = table.head.length ? table.head : cells;
+        continue;
+      }
+      if (!table) {
+        flushPara();
+        flushList();
+        table = { head: [], rows: [] };
+      }
+      table.rows.push(cells);
+      continue;
+    }
+    flushTable();
+
+    const li = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
+    if (li) {
+      flushPara();
+      const tag = /^\d/.test(li[1]) ? "ol" : "ul";
+      if (!list || list.tag !== tag) {
+        flushList();
+        list = { tag, items: [] };
+      }
+      list.items.push(li[2]);
+      continue;
+    }
+    flushList();
+
+    if (/^\s*<!--/.test(line)) continue; // HTML 注释
+    para.push(line.trim());
+  }
+
+  if (fence) out.push(`<pre><code>${esc(fence.buf.join("\n"))}</code></pre>`);
+  flushAll();
+  return out.join("\n");
+}
+
+function inlineMd(s, base, abs) {
+  let t = esc(s);
+
+  // 行内代码先抠出来占位，别让后面的规则动它
+  const codes = [];
+  t = t.replace(/`([^`]+)`/g, (_, c) => {
+    codes.push(c);
+    return `\u0000${codes.length - 1}\u0000`;
+  });
+
+  t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m, alt, url) => {
+    const u = safeUrl(url, base);
+    return u ? `<img src="${u}" alt="${alt}" loading="lazy" decoding="async" referrerpolicy="no-referrer">` : esc(m);
+  });
+  t = t.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m, txt, url) => {
+    const u = safeUrl(url, abs, true);
+    return u ? `<a href="${u}" target="_blank" rel="noreferrer noopener">${txt}</a>` : txt;
+  });
+
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  t = t.replace(/(^|\W)_([^_\n]+)_(?=\W|$)/g, "$1<em>$2</em>");
+  t = t.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+
+  t = t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[Number(i)]}</code>`);
+  return t;
+}
+
+// 只放行 http/https 和仓库内相对路径。README 里的链接不可信，
+// javascript: / data: 一律丢回去当纯文本。
+function safeUrl(url, prefix, isLink = false) {
+  let u = String(url || "").trim();
+  if (!u) return "";
+  if (/^(https?:)?\/\//i.test(u)) return /^https?:\/\//i.test(u) ? u : "";
+  if (/^(javascript|data|vbscript|file):/i.test(u)) return "";
+  if (u.startsWith("#")) return isLink ? u : "";
+  const rel = u.replace(/^\.?\//, "");
+  return prefix ? prefix + rel : "";
+}
+
+/* ── 文件树 ───────────────────────────── */
+
+// GitHub 的 git/trees?recursive=1 给的是扁平 path 列表。
+// 平铺 + 按 "/" 数量缩进，比真做成可折叠树省事，也更好扫。
+// 仓库根目录动辄几百个文件，全列出来没人看，默认收一半。
+function treeHTML(entries, total) {
+  const list = (entries || []).filter((e) => e && e.path);
+  if (!list.length) return "";
+  const LIMIT = 90;
+  const shown = list.slice(0, LIMIT);
+  const html = shown
+    .map((e) => {
+      const depth = (e.path.match(/\//g) || []).length;
+      const name = e.path.split("/").pop();
+      const dir = e.type === "tree";
+      return (
+        `<div class="tf ${dir ? "is-dir" : ""}" style="--d:${Math.min(depth, 6)}" title="${esc(e.path)}">` +
+        `<i>${dir ? "▾" : "·"}</i><span>${esc(name)}</span>` +
+        `</div>`
+      );
+    })
+    .join("");
+  // 仓库真实条目数由后端给（目录列表本身有上限，用 list.length 会说小）
+  const all = total || list.length;
+  const more =
+    all > LIMIT
+      ? `<div class="tf more">共 ${all} 个文件，只显示前 ${LIMIT} 个</div>`
+      : "";
+  return `<div class="mtree">${html}${more}</div>`;
+}
+
 const ICO = {
   heart: `<svg viewBox="0 0 24 24"><path d="M12 20.3 4.6 13a4.8 4.8 0 0 1 6.8-6.8l.6.6.6-.6A4.8 4.8 0 0 1 19.4 13z"/></svg>`,
   link: `<svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 10.5 13.5"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>`,
@@ -317,6 +522,10 @@ function detailHTML(r) {
     ${topics ? `<div class="mtags">${topics}</div>` : ""}
   </div>
   ${fig}
+  <div class="msec" id="mdoc" data-full="${esc(r.full_name)}">
+    <div class="msec-h"><span>README</span></div>
+    <div class="msec-b"><div class="mload">正在拉取 README…</div></div>
+  </div>
   <div class="mpad"></div>
 </div>
 
@@ -339,6 +548,10 @@ function detailHTML(r) {
       ${r.homepage ? `<dt>主页</dt><dd>${esc(r.homepage)}</dd>` : ""}
       <dt>归档</dt><dd>${r.archived ? "已归档" : "活跃"}</dd>
     </dl>
+    <div class="msec" id="mtree" data-full="${esc(r.full_name)}">
+      <div class="msec-h"><span>文件</span></div>
+      <div class="msec-b"><div class="mload">正在拉取目录…</div></div>
+    </div>
   </div>
   <div class="mrfoot">
     <button class="btn" data-act="open" data-full="${esc(r.full_name)}">在 GitHub 打开</button>
@@ -361,6 +574,10 @@ function closeModal() {
   document.body.classList.remove("dim");
 }
 
+// README 全文和目录结构是按需现拉的，同一个仓库不重复请求。
+// 上限 60 条：缓存只是为了避免来回点开同一个项目，不是长期存储。
+const EXTRA = new Map();
+
 async function openDetail(id) {
   try {
     const r = await api.detail(id);
@@ -368,8 +585,64 @@ async function openDetail(id) {
     $("#modal").innerHTML = detailHTML(r);
     showModal();
     $(".mrscroll")?.scrollTo(0, 0);
+    fillExtra(r);
   } catch (e) {
     console.error("打开详情失败", e);
+  }
+}
+
+async function fillExtra(r) {
+  const full = r.full_name;
+  let extra = EXTRA.get(full);
+  if (!extra) {
+    try {
+      extra = await api.repoExtra(full);
+    } catch (e) {
+      const why = e?.message || String(e);
+      for (const [id, what] of [
+        ["mdoc", "README"],
+        ["mtree", "目录"],
+      ]) {
+        const el = document.getElementById(id);
+        // 用户可能已经点开另一个项目了，别把内容写到别人的浮层里
+        if (!el || el.dataset.full !== full) continue;
+        el.querySelector(".msec-b").innerHTML =
+          `<div class="mfail">拉不到${what}：${esc(why)}</div>`;
+      }
+      return;
+    }
+    if (extra) {
+      if (EXTRA.size > 60) EXTRA.clear();
+      EXTRA.set(full, extra);
+    }
+  }
+  if (!extra) return;
+
+  // README 里的相对路径要能点：图片回 raw，链接回 GitHub 页面
+  const base = `https://raw.githubusercontent.com/${full}/${extra.branch}/`;
+  const abs = `https://github.com/${full}/blob/${extra.branch}/`;
+
+  const doc = document.getElementById("mdoc");
+  if (doc && doc.dataset.full === full) {
+    const body = doc.querySelector(".msec-b");
+    const text = extra.readme || "";
+    if (!text.trim()) {
+      body.innerHTML = `<div class="mfail">这个仓库没有 README</div>`;
+    } else {
+      // 有的 README 长到离谱（public-apis 渲染出来 14 万像素，190 屏）。
+      // 默认折一屏多，想看完再展开。
+      const n = md(text, { base, abs });
+      body.innerHTML =
+        `<div class="md fold">${n}</div>` +
+        `<button class="mexpand" data-act="expand">展开全部 README</button>`;
+    }
+  }
+
+  const tree = document.getElementById("mtree");
+  if (tree && tree.dataset.full === full) {
+    const body = tree.querySelector(".msec-b");
+    body.innerHTML =
+      treeHTML(extra.tree, extra.total) || `<div class="mfail">目录是空的</div>`;
   }
 }
 
@@ -425,6 +698,15 @@ document.addEventListener("click", (e) => {
     const a = act.dataset.act;
     if (a === "save") return void flipSave(Number(act.dataset.id || act.closest(".card")?.dataset.id));
     if (a === "close") return closeModal();
+    if (a === "expand") {
+      // README 折叠：展开后按钮变成「收起」，再点折回去
+      const box = act.closest(".msec-b")?.querySelector(".md");
+      if (box) {
+        const folded = box.classList.toggle("fold");
+        act.textContent = folded ? "展开全部 README" : "收起 README";
+      }
+      return;
+    }
     if (a === "open") return void api.openUrl(`https://github.com/${act.dataset.full}`);
   }
   if (e.target.id === "mask") return closeModal();

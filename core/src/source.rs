@@ -22,6 +22,27 @@ pub struct Source {
     token: Option<String>,
 }
 
+/// 目录里的一项。`kind` 直接沿用 GitHub 的 `blob` / `tree`，
+/// 前端靠它区分文件和目录，不做二次映射。
+#[derive(Debug, serde::Serialize)]
+pub struct TreeItem {
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+/// 详情页要的 README 全文和目录结构。
+/// 这两个不在本地库里：库只存首屏摘要，全文按需现拉。
+#[derive(Debug, serde::Serialize)]
+pub struct RepoExtra {
+    pub branch: String,
+    pub readme: String,
+    pub tree: Vec<TreeItem>,
+    /// 仓库真实条目数。列表本身有上限（400），界面要显示「共 N 个」，
+    /// 用 tree.len() 会把数字说小。
+    pub total: usize,
+}
+
 impl Source {
     pub fn new(token: Option<String>) -> Self {
         let agent = ureq::AgentBuilder::new()
@@ -60,6 +81,66 @@ impl Source {
             }
             Err(e) => Err(format!("网络不通：{e}").into()),
         }
+    }
+
+    /// 拉一个仓库的 README 全文和完整目录，给详情页用。
+    ///
+    /// 三次请求：仓库信息拿默认分支、README 拿正文、git/trees 拿目录。
+    /// README 用 `vnd.github.raw` 媒体类型，返回的就是 markdown 原文，
+    /// 省掉一次 base64 解码——这个仓库的 README 能有几百 KB。
+    ///
+    /// 没有 README 或目录拉不到都不算失败：返回空，界面自己显示「没有」。
+    /// 只有仓库本身不存在才报错。
+    pub fn repo_extra(&self, full_name: &str) -> Res<RepoExtra> {
+        let parts: Vec<&str> = full_name.split('/').collect();
+        if parts.len() != 2 || parts.iter().any(|p| p.is_empty() || p.len() > 100) {
+            return Err("仓库名要是 owner/repo 的形式".into());
+        }
+
+        let meta: serde_json::Value = self
+            .call(
+                &format!("https://api.github.com/repos/{full_name}"),
+                "application/vnd.github+json",
+            )?
+            .into_json()?;
+        let branch = meta["default_branch"]
+            .as_str()
+            .unwrap_or("HEAD")
+            .to_string();
+
+        let readme = self
+            .call(
+                &format!("https://api.github.com/repos/{full_name}/readme"),
+                "application/vnd.github.raw",
+            )
+            .ok()
+            .and_then(|r| r.into_string().ok())
+            .unwrap_or_default();
+
+        let tree: serde_json::Value = match self.call(
+            &format!("https://api.github.com/repos/{full_name}/git/trees/{branch}?recursive=1"),
+            "application/vnd.github+json",
+        ) {
+            Ok(r) => r.into_json()?,
+            Err(_) => serde_json::json!({ "tree": [] }),
+        };
+
+        let items = tree["tree"].as_array().cloned().unwrap_or_default();
+        let mut out = Vec::with_capacity(items.len().min(400));
+        for it in items.iter().take(400) {
+            if let (Some(path), Some(kind)) = (it["path"].as_str(), it["type"].as_str()) {
+                out.push(TreeItem {
+                    path: path.to_string(),
+                    kind: kind.to_string(),
+                });
+            }
+        }
+        Ok(RepoExtra {
+            branch,
+            readme,
+            tree: out,
+            total: items.len(),
+        })
     }
 
     /// 搜索一页。`sort` 取 `stars` 或 `updated`：

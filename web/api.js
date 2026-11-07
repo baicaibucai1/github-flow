@@ -24,3 +24,8 @@ export const detail = (id) => need()("detail", { id });
 export const toggleSave = (id, on) => need()("toggle_save", { id, on });
 export const saved = () => need()("saved_list");
 export const openUrl = (url) => need()("open_url", { url });
+
+// README 全文 + 文件树。这两个不在本地库里：库里只存了首屏摘要，
+// 完整 README 和目录结构要现拉 GitHub。所以它们是可失败的——
+// 失败了界面上就显示「拉不到」，卡片本身照常能看。
+export const repoExtra = (fullName) => need()("repo_extra", { full_name: fullName });

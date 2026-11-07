@@ -91,6 +91,17 @@ fn app_info(state: State<AppState>) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// README 全文 + 目录结构。本地库里只有首屏摘要，完整内容现拉 GitHub。
+///
+/// 故意做成同步命令：Tauri 会把它放到自己的线程池里跑，
+/// ureq 是阻塞式客户端，塞进 async 里反而要绕。
+/// 失败就返回 Err，界面显示「拉不到」——不编造内容。
+#[tauri::command]
+fn repo_extra(full_name: String) -> Result<flow_core::source::RepoExtra, String> {
+    let src = flow_core::source::Source::new(None);
+    src.repo_extra(&full_name).map_err(|e| e.to_string())
+}
+
 /// 用系统浏览器打开仓库页。
 /// 只放行 github.com 前缀 —— 这个命令的参数来自界面，
 /// 不加限制的话，将来任何一处 XSS 都能变成任意程序启动。
@@ -183,6 +194,7 @@ fn main() {
             toggle_save,
             saved_list,
             app_info,
+            repo_extra,
             open_url
         ])
         .run(tauri::generate_context!())
