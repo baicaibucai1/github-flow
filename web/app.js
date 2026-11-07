@@ -634,7 +634,7 @@ async function fillExtra(r) {
       const n = md(text, { base, abs });
       body.innerHTML =
         `<div class="md fold">${n}</div>` +
-        `<button class="mexpand" data-act="expand">展开全部 README</button>`;
+        `<div class="mfold"><button class="mexpand" data-act="expand">展开全部 README</button></div>`;
     }
   }
 

@@ -165,7 +165,7 @@ img{display:block}
    左右内边距和 .body 对齐，标题、正文、作者头像落在同一条竖线上。 */
 .cover.is-doc{
   display:flex;flex-direction:column;justify-content:center;
-  min-height:104px;padding:14px 14px 26px;
+  min-height:104px;padding:14px 14px 36px;
 }
 .cover.is-plain{padding-bottom:62.5%}
 
@@ -173,7 +173,7 @@ img{display:block}
 .snip{
   position:absolute;inset:0;z-index:0;
   display:flex;flex-direction:column;gap:5px;
-  padding:14px 14px 26px;overflow:hidden;
+  padding:14px 14px 36px;overflow:hidden;
 }
 .is-plain .snip{display:none}
 /* 图片*加载成功之后*才关掉文字层。README 里的 PNG 相当一部分是透明底 logo，
@@ -226,7 +226,7 @@ img{display:block}
 .cover.is-img.broken{
   aspect-ratio:auto;min-height:104px;
   display:flex;flex-direction:column;justify-content:center;
-  padding:14px 14px 26px;
+  padding:14px 14px 36px;
 }
 .cover.is-img.broken .snip{position:relative;inset:auto;padding:0;flex:0 0 auto}
 
@@ -430,14 +430,19 @@ body.dim{overflow:hidden}
   background:linear-gradient(to bottom,rgba(255,255,255,0),#fff 85%);
   pointer-events:none;
 }
+/* 按钮吸在可见区底部，否则它躺在 1080px 之下，得先滚到底才发现有它。
+   但只让按钮浮起来是不够的：内容会从按钮背后直直切过去，像被裁了一刀。
+   所以外壳负责吸底 + 一层白雾，正文到这儿渐隐成白。 */
+.mfold{
+  position:sticky;bottom:0;z-index:3;
+  margin:0 -22px;padding:18px 22px 12px;
+  background:linear-gradient(to bottom,rgba(255,255,255,0),#fff 46%);
+}
 .mexpand{
-  display:block;width:100%;margin:2px 0 12px;padding:9px;
+  display:block;width:100%;margin:0;padding:9px;
   font-size:12.5px;font-weight:600;color:var(--ink-2);
   background:#f7f7f9;border-radius:9px;
   transition:background .14s;
-  /* 吸在可见区底部：不然按钮躺在 1080px 之下，得先滚到底才发现有它 */
-  position:sticky;bottom:6px;z-index:3;
-  box-shadow:0 0 0 6px #fff;
 }
 .mexpand:hover{background:#f0f0f3}
 .md>*:first-child{margin-top:0}
@@ -572,7 +577,7 @@ body.dim{overflow:hidden}
   .cats{padding:0 14px 8px;gap:2px;justify-content:flex-start}
   .feed{padding:4px 14px 76px;gap:10px}
   .col{gap:12px}
-  .cover.is-doc{min-height:92px;padding:12px 11px 24px}
+  .cover.is-doc{min-height:92px;padding:12px 11px 34px}
   .body{padding:8px 11px 10px}
   .body h3{font-size:12.5px}
   .body p{font-size:11.5px;-webkit-line-clamp:2}
