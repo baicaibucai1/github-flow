@@ -1,34 +1,46 @@
 # Flow
 
-信息流式的 GitHub —— 帮你发现可能感兴趣的项目，而不是把排行榜再抄一遍。
+**信息流式的 GitHub** —— 帮你发现可能感兴趣的项目，而不是把排行榜再抄一遍。
 
-## 现在这一版有什么
+3500 个真实项目随程序一起分发，双击就能刷：不用登录、不用联网、不用等采集。
+卡片头部就是 README 首屏，点开能读完整个 README 和文件树。
 
-- **3500 个真实项目，随程序一起分发**。双击就能刷，不需要登录、不需要联网、不需要等采集。
-- **左侧导航 + 顶部搜索 + 分类行**。分类按语言，点一下就把流筛到那一门；
-  搜索在本地内存里过滤全部 3500 条（不是只搜当前这一屏）。
-- **卡片头部就是 README 首屏**。有首图就铺图，没图就把 README 的第一段按文档样式排出来，
-  底下留一行极小的 `README` 标明出处。图片加载失败会自动退回文字形态，
-  断网时看到的是「没有插图」，而不是一片空白。
-- **瀑布流**。窗口 1180 宽四列、1440 五列；每张卡是一整块（白底 + 圆角 + 很浅的投影），
-  头部是图或 README 摘录，底下两行字：项目名、简介，再一行作者 + 语言。
-  库里只有三分之一的项目有 README 配图，所以文字形态是常态而不是兜底，
-  两种形态都得长得像正式卡片。
-- **点开是居中浮层**，不是侧边抽屉：左边一列操作（关闭 / 收藏 / 开仓库）；
-  中间从上到下是作者、标题、简介、大图、**README 正文**；右边是数据
-  （stars / forks / issues / 创建年份 / 许可 / 主页）和**文件树**。
-- **README 和文件树是实时拉的**。库里只存首屏摘要，点开时才向 GitHub 请求
-  README 原文和 `git/trees` 目录，所以看到的是仓库当前的样子，不是采集那天的快照。
-  拉不到就在原位写「拉不到 README：原因」，不编内容。
-- **收藏**。存在本地 SQLite 里，重启不丢。
+![首页信息流](docs/img/feed.png)
 
-## 明确没有的（这一版故意不做）
+*1440 宽排五列。图上每个项目、每张封面、每段摘录都来自真实数据，不是占位图。*
 
-登录、画像、个性化推荐、云端搜索、多设备同步、自动更新、APK。
+## 为什么不是又一个排行榜
 
-这一版有本地搜索（内存过滤）、按语言筛选，但没有跨设备的、也没有语义搜索。
+按星数排出来的首页永远是同一批巨无霸，那是榜单不是发现。
+所以这里做的是「流」：卡片有图有文、可以一直往下翻，筛选交给语言分类和搜索，
+排序交给一个会说人话的打分函数（见下文）。
 
-这些是后面的事。上一版一次性全做了，结果一条真数据都没显示出来。
+库里只有大约三分之一的项目有 README 配图，所以「没有图」是常态而不是异常。
+没有图的项目会被排成一段被截断的 README：标题加首段，底下留一行极小的
+`README` 标明出处。两种形态长得像同一张卡片，扫过去不会一列全是色块。
+
+## 点开一张卡片
+
+![项目详情](docs/img/detail.png)
+
+*左栏三个操作，中栏是内容本身，右栏是数据和文件树；背景是变暗的信息流，不是另一个页面。*
+
+中栏从上到下：作者 → 项目名 → 一句话简介 → 话题标签 → 封面大图 → **README 正文**。
+README 是现拉的，用自己写的 markdown 渲染器排版，标题、表格、代码块、引用、
+清单和图片都能出来；长到离谱的 README 默认只展开一屏多，底部渐隐，
+点「展开全部 README」才铺开（`public-apis` 那份渲染出来是 14 万像素，约 190 屏）。
+
+右栏是 stars / forks / issues / 创建年份、最后更新、许可、主页，
+最下面是**文件树**：按路径层级缩进，目录在前，超过 90 条会写明还剩多少。
+
+## 窄窗口
+
+![窄窗口](docs/img/narrow.png)
+
+*720 宽：左侧导航收成底部一条，瀑布流降到三列，卡片内容不变形。*
+
+窗口小于 460 是两列，小于 680 三列，小于 1000 四列，否则五列。列宽按容器实测算，
+不是写死的百分比——写成百分比在 1180 那种半宽窗口里会挤出一列 165px 的碎条。
 
 ## 跑起来
 
@@ -51,39 +63,8 @@ target/release/seed.db      # 首次启动时复制到 %APPDATA%\flow\flow.db
 FLOW_SELFTEST="C:\path\selftest.json" ./target/release/flow.exe
 ```
 
-它会跑一次真实取数 + 一次收藏写入往返，把结果写成 JSON 后退出。**不开窗口**，用来确认 exe 到底连没连上库。
-
-## 开发期工具
-
-采集与检查都在 `flowctl` 里，产品运行时不需要它：
-
-```bash
-export FLOW_GH_TOKEN=<你的令牌>
-
-# 采集 3500 条（按语言 × 星数分档，约 5 分钟）
-./target/release/flowctl harvest --db build/seed.db --target 3500
-
-# 逐仓库补 README 首屏（标题 / 首段 / 首图），带限速与断点续跑
-./target/release/flowctl enrich --db build/seed.db
-
-# 改了抽取规则想重跑
-./target/release/flowctl enrich --db build/seed.db --redo
-
-# 看单个仓库抽出来什么
-./target/release/flowctl readme --repo tauri-apps/tauri
-
-# 看分布与前十条
-./target/release/flowctl stats --db build/seed.db
-
-# 导出界面用的快照（版式核对用，不启动窗口）
-./target/release/flowctl export --db build/seed.db --out build/feed.json
-```
-
-把采集结果做成随包发布的种子库：
-
-```bash
-sqlite3 build/seed.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM INTO 'app/seed.db';"
-```
+它会跑一次真实取数 + 一次收藏写入往返，把结果写成 JSON 后退出。**不开窗口**，
+用来确认 exe 到底连没连上库——上一版就是死在这里，界面一切正常，实际四天没读到一条真项目。
 
 ## 结构
 
@@ -94,7 +75,7 @@ core/                所有逻辑，与界面无关
   src/rank.rs        打分，纯函数，有单测
   src/readme.rs      从 README 原文里抽首屏（标题 / 首段 / 首图）
   src/image.rs       只从文件头读图片宽高，不引编解码器
-  src/source.rs      唯一的出网口：搜索、限速、README、图片探测
+  src/source.rs      唯一的出网口：搜索、限速、README、目录树、图片探测
   src/bin/flowctl.rs 开发期命令行
 app/                 桌面外壳：只算数据目录、落种子库、转发命令
   src/main.rs        没有任何业务逻辑，也没有一句 SQL
@@ -102,13 +83,16 @@ app/                 桌面外壳：只算数据目录、落种子库、转发�
 web/                 界面：原生 ESM + CSS，无框架、无构建
 ```
 
+界面是纯静态文件，进度条、瀑布流、详情浮层、markdown 渲染全在 `web/` 里，
+没有构建步骤，改完刷新就见效。
+
 ## 三条不能破的规矩
 
-1. **只有一条数据通路**。界面拿到的项目一定来自 `core/store.rs`。拿不到就报错并在界面上显示，
-   **永远不返回假数据**。上一版有个「连不上就退回 24 条演示数据」的分支，界面看着一切正常，
-   实际四天没显示过一条真项目 —— 这是它死掉的直接原因。
-2. **核心层不碰平台路径**。`core/` 里出现 `APPDATA` / `HOME` 就是错的。数据目录由外壳传进来，
-   否则搬到安卓上第一个崩的就是这里。
+1. **只有一条数据通路**。界面拿到的项目一定来自 `core/store.rs`。拿不到就报错并在
+   界面上显示，**永远不返回假数据**。上一版有个「连不上就退回 24 条演示数据」的分支，
+   界面看着一切正常，实际四天没显示过一条真项目 —— 这是它死掉的直接原因。
+2. **核心层不碰平台路径**。`core/` 里出现 `APPDATA` / `HOME` 就是错的。数据目录由外壳
+   传进来，否则搬到安卓上第一个崩的就是这里。
 3. **打分是纯函数**。同样输入必须给同样分数，否则没法测、也没法解释「为什么推这个」。
 
 ## 打分怎么算
@@ -124,32 +108,52 @@ score = 0.45 × 热度 + 0.55 × 新鲜度
 - 半年没推送 ×0.6；描述短于 12 字 ×0.7。
 
 取材时按星数分四档（<1k / 1k–10k / 10k–50k / >50k）轮转，同作者不相邻。
-纯按分数排出来的东西首屏一定是巨无霸，那是榜单不是发现。
 
-## 卡片头部为什么要读 README
+## 卡片头图为什么读 README
 
 信息流第一屏决定用户要不要点进去。只放色块加首字母，扫过去全是一个形状，什么也看不出来；
-直接拿 GitHub 的 `og:image` 又是「卡中卡」——一张卡片里套一张带边框的卡片，而且那张图本身就是
-头像 + 简介 + 星数的排版，跟我们的卡片内容重复。
+直接拿 GitHub 的 `og:image` 又是「卡中卡」——一张卡片里套一张带边框的卡片，而且那张图
+本身就是头像 + 简介 + 星数的排版，跟我们的卡片内容重复。
 
 真正的信号在 README 里：作者自己写的第一句话，和第一张截图。所以采集期就把每个仓库的
 README 拉一次，抽三样东西存进库：
 
-- **一级标题**，且只在它比项目名多说点什么时才显示（`Learn Rust, one exercise at a time` 值得显示，
-  `nanobot` 就是重复）；
+- **一级标题**，且只在它比项目名多说点什么时才显示（`Learn Rust, one exercise at a time`
+  值得显示，`nanobot` 就是重复）；
 - **第一段正经说明**，跳过徽章行、代码块、HTML、语言切换条、ASCII art 和纯链接行；
 - **第一张能当封面的图**，跳过徽章站、SVG、视频附件，并且真的取回文件头看宽高——
   小于 320×160 或比例极端（太扁的横幅、太长的长图）一律不要。
 
 3500 个仓库就是 3500 次 API 请求，按 1.3 次/秒（令牌额度 5000 次/小时）排队，
-四十多分钟跑完，只在造种子库时做一次。产品刷信息流时不发任何请求，读的只是这三列；
+四十多分钟跑完，只在造种子库时做一次。刷信息流时不发任何请求，读的只是这三列；
 只有点开某张卡片，才会去拉那个仓库的 README 全文和目录树。
 
 ## 采集为什么按星数分档
 
 Search API 按 `sort=stars` 取第一页，永远返回该语言星数最高的 100 个。
-条件写得再宽（`stars:>=50`），捞回来的还是同一批人尽皆知的仓库，中小项目一条都进不来。
+条件写得再宽（`stars:>=50`），捞回来的还是同一批人尽人皆知的仓库，中小项目一条都进不来。
 所以查询被切成三个区间（100–800 按更新时间、800–10000、≥10000），一档一档地要。
+
+## 开发期工具
+
+采集与检查都在 `flowctl` 里，产品运行时不需要它：
+
+```bash
+export FLOW_GH_TOKEN=<你的令牌>
+
+./target/release/flowctl harvest --db build/seed.db --target 3500   # 采集，约 5 分钟
+./target/release/flowctl enrich  --db build/seed.db                 # 补 README 首屏
+./target/release/flowctl enrich  --db build/seed.db --redo          # 改了抽取规则重跑
+./target/release/flowctl readme  --repo tauri-apps/tauri            # 看单个仓库抽出了什么
+./target/release/flowctl stats   --db build/seed.db                 # 看分布与前十条
+./target/release/flowctl export  --db build/seed.db --out build/feed.json
+```
+
+把采集结果做成随包发布的种子库：
+
+```bash
+sqlite3 build/seed.db "PRAGMA wal_checkpoint(TRUNCATE); VACUUM INTO 'app/seed.db';"
+```
 
 ## 环境
 
@@ -158,19 +162,12 @@ Windows + **MSVC** 工具链（Tauri 官方只支持 MSVC，gnu 下链接出来�
 ```bash
 winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
-```
-
-编译时显式指定工具链：
-
-```bash
 cargo +stable-x86_64-pc-windows-msvc build --release -p flow-app
 ```
 
-安卓端（Android SDK/NDK + `cargo tauri android init`）这一步**尚未做**，见文末。
+运行时不登录、也不需要令牌；只有 `flowctl harvest` / `enrich` 采集时需要 `FLOW_GH_TOKEN`。
 
-OAuth 登录尚未实现，所以运行时不需要任何令牌；只有 `flowctl harvest` 采集时需要 `FLOW_GH_TOKEN`。
-
-## 踩过的两个坑（写下来免得再踩）
+## 踩过的两个坑
 
 **1. 不要把种子库 `include_bytes!` 打进 exe。**
 试过，结果是 4.9MB 的未签名程序里塞着 1.5MB 二进制数据——Defender 判成加壳文件，
@@ -178,8 +175,7 @@ OAuth 登录尚未实现，所以运行时不需要任何令牌；只有 `flowct
 改成从 exe 同目录读 `seed.db` 之后立刻正常。
 
 **2. 分发目录不要放进带实时扫描的路径。**
-未签名的 exe 一旦被复制出构建目录，可能几秒内就被清掉。
-开发时从 `target/release/` 直接跑最稳。
+未签名的 exe 一旦被复制出构建目录，可能几秒内就被清掉。开发时从 `target/release/` 直接跑最稳。
 
 ## 还没做
 
@@ -187,5 +183,9 @@ OAuth 登录尚未实现，所以运行时不需要任何令牌；只有 `flowct
 - 多设备同步
 - APK（技术路线已定 Tauri 2，工具链未装）
 - 增量采集（现在只有 `flowctl harvest` 手动跑）
-- **封面图完全离线**：现在图片是 `raw.githubusercontent.com` 的外链，断网时全部退回文字形态。
+- **封面图完全离线**：图片现在是 `raw.githubusercontent.com` 的外链，断网时全部退回文字形态。
   把缩略图压好一起打包（估计 +20MB）还没做。
+
+## 许可
+
+[MIT](LICENSE)。挑几条 issue、提 PR 都欢迎。
