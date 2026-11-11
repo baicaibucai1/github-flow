@@ -183,7 +183,7 @@ const trKey = (id, f) => id + "\u0000" + f;
    摘录占了封面整块面积，英文摆在那儿比简介还显眼。 */
 function trTargets(card, r) {
   const out = [];
-  const d = card.querySelector(".body p");
+  const d = card.querySelector(".body > p");
   if (d && r.description) out.push({ el: d, f: "desc", text: r.description });
   const p = card.querySelector(".cover .rp");
   if (p && r.readme_head) out.push({ el: p, f: "head", text: r.readme_head });
@@ -214,7 +214,7 @@ function trSetup() {
           const key = trKey(r.id, t.f);
           const hit = TR.memo.get(key);
           if (hit) {
-            trApplyEl(t.el, hit);
+            trShow(t.el, hit);
             continue;
           }
           TR.q.push({ key, text, el: t.el });
@@ -249,7 +249,7 @@ async function trFlush() {
       const t = zh && zh[i];
       if (!t || t === b.text) continue;
       TR.memo.set(b.key, t);
-      if (b.el.isConnected) trApplyEl(b.el, t);
+      if (b.el.isConnected) trShow(b.el, t);
     }
   } catch {
     // 翻不动就保持原文。用户看的是内容，不是我们的内部状态，
@@ -260,14 +260,33 @@ async function trFlush() {
   }
 }
 
-// 原文先记在元素上，关掉开关时才有东西贴回去
-function trApplyEl(el, text) {
-  if (el.__orig == null) el.__orig = el.textContent;
-  el.textContent = text;
+/* 译文挂在原文下面，一行灰字，原文一个字都不动。
+   上一版是直接把 textContent 换成中文，问题很实在：译文一出错，
+   原文就没了，用户连「这句本来怎么写的」都看不到；而且中文替换英文后
+   卡片高度会变、行内标记（链接、代码）全丢。挂一行小字两个问题一起没了。 */
+
+// 这些元素的译文放内部：它们是块级容器，塞个 div 进去合法，
+// 放外面反而会破坏列表/表格的结构（ul 里直接跟 div 是非法嵌套）。
+const TR_INSIDE = /^(LI|TD|TH|H[1-6])$/;
+
+function trShow(el, text) {
+  if (!el || !text || !el.isConnected) return;
+  let sub = el.__trsub;
+  if (!sub || !sub.isConnected) {
+    sub = document.createElement("div");
+    sub.className = "trsub";
+    if (TR_INSIDE.test(el.tagName)) el.appendChild(sub);
+    else el.insertAdjacentElement("afterend", sub);
+    el.__trsub = sub;
+  }
+  sub.textContent = text;
 }
 
-function trRestoreEl(el) {
-  if (el.__orig != null) el.textContent = el.__orig;
+function trHide(el) {
+  if (el && el.__trsub) {
+    el.__trsub.remove();
+    el.__trsub = null;
+  }
 }
 
 /// 开关切换：关掉就把英文贴回去，打开就重扫一遍当前视口。
@@ -275,20 +294,21 @@ function trToggle() {
   TR.on = !TR.on;
   const b = document.querySelector("#trbtn");
   if (b) b.classList.toggle("on", TR.on);
+  if (!TR.on) {
+    // 关掉就全撤。README 正文里的译文不归 trTargets 管，按 class 统一清最省事。
+    for (const s of document.querySelectorAll(".trsub")) s.remove();
+    return;
+  }
   for (const c of document.querySelectorAll(".card")) {
     const r = c.__repo;
     if (!r) continue;
-    if (TR.on) {
-      let miss = false;
-      for (const t of trTargets(c, r)) {
-        const hit = TR.memo.get(trKey(r.id, t.f));
-        if (hit) trApplyEl(t.el, hit);
-        else if (/[a-zA-Z]{3}/.test(t.text)) miss = true;
-      }
-      if (miss) TR.obs?.observe(c);
-    } else {
-      for (const t of trTargets(c, r)) trRestoreEl(t.el);
+    let miss = false;
+    for (const t of trTargets(c, r)) {
+      const hit = TR.memo.get(trKey(r.id, t.f));
+      if (hit) trShow(t.el, hit);
+      else if (/[a-zA-Z]{3}/.test(t.text)) miss = true;
     }
+    if (miss) TR.obs?.observe(c);
   }
 }
 
@@ -303,28 +323,26 @@ async function trDetail(r) {
     const key = trKey(r.id, "desc");
     const hit = TR.memo.get(key);
     if (hit) {
-      trApplyEl(d, hit);
+      trShow(d, hit);
     } else {
       try {
         const [t] = await api.trLines([r.description]);
         if (t && t !== r.description) {
           TR.memo.set(key, t);
-          if (d.isConnected) trApplyEl(d, t);
+          if (d.isConnected) trShow(d, t);
         }
       } catch {
         /* 翻不动就留原文 */
       }
     }
   }
+  // 引文是 readme_head 渲染出来的 HTML，里面带链接。直接翻整段再重渲染
+  // 会把链接冲掉，改成「原文照旧 + 下面挂灰字」就完全不用碰它。
   const q = $("#modal .mquote p");
   if (q && r.readme_head && !/[\u4e00-\u9fff]/.test(r.readme_head)) {
     try {
-      const zh = await api.trMd(r.readme_head);
-      if (zh && zh !== r.readme_head && q.isConnected) {
-        const base = `https://raw.githubusercontent.com/${r.full_name}/HEAD/`;
-        const abs = `https://github.com/${r.full_name}/blob/HEAD/`;
-        q.innerHTML = teaser(zh, base, abs);
-      }
+      const [t] = await api.trLines([r.readme_head]);
+      if (t && t !== r.readme_head && q.isConnected) trShow(q, t);
     } catch {
       /* 同上 */
     }
@@ -854,6 +872,9 @@ function md(src, opt = {}) {
   let para = [];
   let fence = null;
   let table = null;
+  // 当前是不是还在一段 HTML 注释里。注释可以跨几十行——contributors 墙、
+  // 头像缓存说明这类生成器产物会把长列表整个塞进注释藏起来。
+  let inComment = false;
 
   // 引用式链接（[文字][key] + 文末 [key]: https://…）先扫一遍拿定义。
   // 扫的时候跳过代码块——代码里的 [foo]: bar 不是定义。
@@ -919,7 +940,7 @@ function md(src, opt = {}) {
 
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    const line = raw.replace(/\s+$/, "");
+    let line = raw.replace(/\s+$/, "");
 
     if (fence) {
       if (/^\s*```/.test(line)) {
@@ -935,6 +956,36 @@ function md(src, opt = {}) {
       flushAll();
       fence = { lang: fm[1] || "", buf: [] };
       continue;
+    }
+
+    /* HTML 注释要先剥掉再解析。真实 README 里它有三种形态，
+       只判断「这一行以 <!-- 开头」全都处理不对：
+         · `<!-- note -->`                        一行闭合
+         · `<!-- a` … 十几行 … `-->`              跨行
+         · `<!-- a --> <!-- b` … `-->`            一行里两个，后一个没闭合
+       第三种最常见（生成器把上一段的尾注和下一段的开头写在一行），
+       按行判断的话 `-->` 会骗倒我们，把后面的用户名当正文渲染出来。 */
+    if (inComment || line.includes("<!--")) {
+      let s = line;
+      if (inComment) {
+        const c = s.indexOf("-->");
+        if (c === -1) continue; // 整行都在注释里
+        inComment = false;
+        s = s.slice(c + 3);
+      }
+      for (;;) {
+        const o = s.indexOf("<!--");
+        if (o === -1) break;
+        const c = s.indexOf("-->", o + 4);
+        if (c === -1) {
+          inComment = true;
+          s = s.slice(0, o);
+          break;
+        }
+        s = s.slice(0, o) + s.slice(c + 3);
+      }
+      if (!s.trim()) continue;
+      line = s;
     }
     if (!line.trim()) {
       // 列表项之间的空行不结束列表（CommonMark 的 loose list）。
@@ -1071,7 +1122,6 @@ function md(src, opt = {}) {
     }
     flushList();
 
-    if (/^\s*<!--/.test(line)) continue; // HTML 注释
     para.push(line.trim());
   }
 
@@ -1091,6 +1141,10 @@ const unescAttr = (s) =>
 
 function inlineMd(s, base, abs, refs) {
   let t = esc(s);
+
+  // 行内注释：`text <!-- 别显示 --> more`。块级注释在 md() 里就吞掉了，
+  // 这里只管夹在句子中间的。esc 之后尖括号已经是实体，得按实体匹配。
+  t = t.replace(/&lt;!--[\s\S]*?--&gt;/g, "");
 
   // 行内代码先抠出来占位，别让后面的规则动它
   const codes = [];
@@ -1316,6 +1370,42 @@ async function openDetail(id) {
   }
 }
 
+/// README 正文：逐块取原文，翻完在每块下面挂一行灰字。
+/// 不再整篇替换。之前那版把整篇 markdown 送去翻、拿回来重新渲染，
+/// 代码块、标签、链接全靠分块逻辑保命，一处没想到整篇就花掉；
+/// 现在原文一个字都不动，译文只是附加的一行。
+async function trReadme(root, cap = 600) {
+  if (!TR.on || !TR.ready || !root) return;
+  const blocks = [...root.querySelectorAll("p, li, h1, h2, h3, h4, blockquote, td, th")].filter(
+    (el) => {
+      // 只翻叶子块。li 里还套着子列表的话，textContent 会把子项一起算进来，
+      // 翻出来是一长串，贴回去又跟子项对不上。
+      if (el.querySelector("p, li, ul, ol, blockquote, pre, table")) return false;
+      const t = el.textContent.trim();
+      if (t.length < 3 || !/[a-zA-Z]{3}/.test(t)) return false;
+      if (/[\u4e00-\u9fff]/.test(t)) return false; // 本来就是中文，或者已经挂过译文
+      return true;
+    }
+  );
+  const list = blocks.slice(0, cap);
+  // 一批 40：整篇一次发过去，public-apis 那种能到几千块，
+  // 一个 IPC 传几十万字符，等着比翻还久。
+  for (let i = 0; i < list.length; i += 40) {
+    const chunk = list.slice(i, i + 40);
+    let zh;
+    try {
+      zh = await api.trLines(chunk.map((el) => el.textContent.trim()));
+    } catch {
+      return;
+    }
+    for (let k = 0; k < chunk.length; k++) {
+      const t = zh && zh[k];
+      const src = chunk[k].textContent.trim();
+      if (t && t !== src) trShow(chunk[k], t);
+    }
+  }
+}
+
 function paintReadme(body, text, base, abs) {
   const n = md(text, { base, abs });
   body.innerHTML =
@@ -1365,18 +1455,8 @@ async function fillExtra(r) {
       // 有的 README 长到离谱（public-apis 渲染出来 14 万像素，190 屏）。
       // 默认折一屏多，想看完再展开。
       paintReadme(body, text, base, abs);
-      // 先出英文再补中文：本地词典翻一篇 6 万字符也就几十毫秒，
-      // 用户基本看不到中间态；万一翻挂了，英文已经在那儿了。
-      if (TR.on && TR.ready) {
-        api
-          .trMd(text)
-          .then((zh) => {
-            if (!zh || zh === text) return;
-            if (doc.dataset.full !== full) return;
-            paintReadme(body, zh, base, abs);
-          })
-          .catch(() => {});
-      }
+      // 英文先铺出来，中文一段段跟在后面补，用户不用等整篇翻完才能读。
+      trReadme(body);
     }
   }
 
@@ -1553,8 +1633,8 @@ async function boot() {
         b.classList.toggle("on", TR.on);
         b.title =
           st.engine === "local"
-            ? "显示中文译文（本地词典，不联网）"
-            : `显示中文译文（${st.model || st.engine}）`;
+            ? "在原文下方显示中文（本地词典，不联网）"
+            : `在原文下方显示中文（${st.model || st.engine}）`;
       }
       if (st.ready) {
         trSetup();
@@ -1571,5 +1651,10 @@ async function boot() {
     fatal("读不到本地库", e?.message || String(e));
   }
 }
+
+// 调试出口。CDP 里够得着渲染器和翻译服务，验一段 markdown 的渲染结果
+// 不用真去数据库里翻一个仓库出来，也不用靠点卡片（点错过好几次）。
+// 只挂读函数，没有任何会改数据的入口。
+window.__flow = { md, teaser, trReadme, trLines: api.trLines };
 
 boot();

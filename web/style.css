@@ -766,6 +766,31 @@ body.dim{overflow:hidden}
   .mrfoot{position:sticky;bottom:0;background:#fff}
 }
 
+/* ── 译文：原文下面一行灰字 ─────────────
+   不覆盖原文。翻译出错时原句还在，行内的链接和代码也不会被冲掉；
+   整篇 README 也不用为了保结构而走「翻一遍再重新渲染」那条险路。 */
+.trsub{
+  display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;
+  -webkit-line-clamp:3;
+  margin:-3px 0 0;
+  font-size:11.5px;line-height:1.55;font-weight:400;letter-spacing:0;
+  color:var(--ink-3);
+  word-break:break-word;
+}
+/* 卡片简介：原文两行 clamp 不动，译文跟一行在下面 */
+.body>.trsub{margin-top:2px;font-size:11px;-webkit-line-clamp:2}
+/* 封面上的摘录和标题：得压住色带，不能用全局那档灰 */
+.snip .trsub{color:hsl(var(--h) 20% 26%);opacity:.72;-webkit-line-clamp:3}
+.snip .rt+.trsub{margin-top:1px;font-size:11px}
+/* README 正文：p 自身下边距 10px，译文要往回拉一点才不脱节 */
+/* 正文译文不截断：原文段落没有行数限制，译文被切一半会很怪 */
+.md .trsub{margin:-7px 0 10px;font-size:12px;color:#9aa1aa;display:block}
+.md li .trsub,.md blockquote .trsub{margin:3px 0 0}
+.md h1 .trsub,.md h2 .trsub,.md h3 .trsub,.md h4 .trsub{margin:2px 0 0;font-weight:400}
+/* 详情头的简介和引文 */
+.mdesc+.trsub{margin-top:4px;font-size:12px;display:block}
+.mquote p+.trsub{margin-top:6px;font-size:12px;color:#8d939c;display:block}
+
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }

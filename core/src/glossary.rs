@@ -146,6 +146,28 @@ pub const PHRASES: &[(&str, &str)] = &[
     ("enables", "使能"),
     ("enable", "启用"),
     ("housed", "存放"),
+    ("ad blocker", "广告拦截器"),
+    ("blocker", "拦截器"),
+    ("lobster", "龙虾"),
+    ("guidelines", "指南"),
+    ("guideline", "指南"),
+    ("employ", "聘请"),
+    ("employs", "聘请"),
+    ("donor", "捐赠者"),
+    ("donors", "捐赠者"),
+    ("direct", "直接"),
+    ("ultra-lightweight", "超轻量"),
+    ("lightweight", "轻量"),
+    ("remember", "记住"),
+    ("supply", "提供"),
+    ("work with", "处理"),
+    ("stay in the loop", "保持了解"),
+    ("on top of", "掌握"),
+    ("shape", "塑造"),
+    ("decide", "决定"),
+    ("cannot", "不会"),
+    ("to be used as", "用作"),
+    ("used as", "用作"),
     ("please", "请"),
     ("instructions", "说明"),
     ("versatile", "多用途"),
@@ -2677,6 +2699,19 @@ fn lookup(w: &str) -> Option<&'static str> {
 /// 该不该整词保留。带下划线、数字、路径的都算代码标识符。
 /// 驼峰只认「首字母小写 + 中间有大写」（getUserById），
 /// 因为 `APIs` `URLs` `HTTPRequest` 这种缩写开头的不该被挡在门外。
+/// 这些词是编程语言名。用来判断 `built in X` 里的 in 到底是
+/// 「内置」还是「用 X 写的」——后者才是 GitHub README 里的常见意思。
+fn is_lang(w: &str) -> bool {
+    matches!(
+        w.to_lowercase().as_str(),
+        "rust" | "go" | "golang" | "python" | "javascript" | "typescript" | "zig" | "c"
+            | "cpp" | "java" | "kotlin" | "swift" | "ruby" | "php" | "csharp" | "scala"
+            | "haskell" | "elixir" | "erlang" | "lua" | "dart" | "nim" | "julia" | "shell"
+            | "bash" | "html" | "css" | "sql" | "assembly" | "ocaml" | "clojure" | "perl"
+            | "svelte" | "vue" | "react" | "flutter"
+    )
+}
+
 fn is_code_token(w: &str) -> bool {
     if w.contains('_') || w.contains('/') || w.contains('\\') || w.contains('@') {
         return true;
@@ -2849,6 +2884,13 @@ fn translate_flat(s: &str, kept: &mut usize) -> String {
             }
         }
         if let Some((n, zh)) = hit {
+            // `built in Rust` 不是「内置 Rust」，是「用 Rust 写的」。
+            // 静态词表没法带条件，这种要看后一个词才能定性的短语只能在这儿兜。
+            let zh = if zh == "内置" && words.get(i + n).map(|w| is_lang(&w.text)).unwrap_or(false) {
+                "基于"
+            } else {
+                zh
+            };
             if !zh.is_empty() {
                 out.push((zh.to_string(), w.space));
             }
@@ -3526,4 +3568,15 @@ mod tests {
         assert!(o.text.contains("https://deno.com/a?b=1"), "{}", o.text);
         assert!(o.text.contains("https://x.dev/y"), "{}", o.text);
     }
+    #[test]
+    fn built_in_is_not_always_builtin() {
+        // 「用某语言写的」是 README 里的常见意思，不能一律译成「内置」
+        let a = translate("A game engine built in Rust.").text;
+        assert!(a.contains("基于Rust"), "{a}");
+        assert!(!a.contains("内置"), "{a}");
+        // 带连字符的 built-in 是另一个词，仍然是「内置」
+        let b = translate("A browser with a built-in ad blocker.").text;
+        assert!(b.contains("内置"), "{b}");
+    }
+
 }
