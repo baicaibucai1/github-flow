@@ -20,6 +20,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3 4.6 13a4.8 4.8 0 0 1 6.8-6.8l.6.6.6-.6A4.8 4.8 0 0 1 19.4 13z"/></svg>
       <span>收藏</span><i id="savedn"></i>
     </button>
+    <button class="navitem" data-view="me">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.4" r="3.7"/><path d="M4.9 20c.5-3.9 3.6-6 7.1-6s6.6 2.1 7.1 6"/></svg>
+      <span>我的</span>
+    </button>
   </nav>
 
   <div class="sidefoot">
@@ -35,12 +39,14 @@
       <input id="q" type="search" placeholder="搜索项目、语言、话题" autocomplete="off" spellcheck="false">
       <svg class="mag" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.4"/><path d="m16 16 4.2 4.2"/></svg>
     </div>
+    <button id="trbtn" class="trbtn on" title="显示中文译文（本地词典）">译</button>
   </header>
 
   <nav class="cats" id="cats"></nav>
 
   <main id="feed" class="feed"></main>
   <main id="savedview" class="feed" hidden></main>
+  <main id="meview" class="me" hidden></main>
 
   <div id="hint" class="hint">正在打开本地库…</div>
   <div id="fatal" class="fatal" hidden></div>

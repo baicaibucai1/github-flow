@@ -83,6 +83,12 @@ impl Source {
         }
     }
 
+    /// 取一个 JSON 接口。账号资料、仓库列表这类只读请求从这里走，
+    /// 免得每个模块自己拼一个 Agent（UA、超时、错误文案都只在这一个地方）。
+    pub fn json(&self, url: &str) -> Res<serde_json::Value> {
+        Ok(self.call(url, "application/vnd.github+json")?.into_json()?)
+    }
+
     /// 拉一个仓库的 README 全文和完整目录，给详情页用。
     ///
     /// 三次请求：仓库信息拿默认分支、README 拿正文、git/trees 拿目录。

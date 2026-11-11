@@ -49,6 +49,16 @@ create table if not exists meta (
   k text primary key,
   v text not null
 );
+
+-- 翻译缓存。键是「目标语言 + 原文」的稳定哈希，不含仓库 id：
+-- 同一个句子在十个仓库里出现只翻一次，README 改了就自动失效。
+create table if not exists tr (
+  h      text primary key,
+  src    text not null,
+  dst    text not null,
+  engine text not null default '',
+  at     text not null
+);
 "#;
 
 impl Store {
@@ -306,6 +316,58 @@ impl Store {
         )?;
         let it = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(it.filter_map(Result::ok).collect())
+    }
+
+    /// 批量查翻译缓存。没翻过的不在返回的 map 里。
+    /// 一次查 30 个键也只用一条语句，别一个键一次查询。
+    pub fn tr_get(&self, keys: &[String]) -> Res<std::collections::HashMap<String, String>> {
+        let mut out = std::collections::HashMap::new();
+        if keys.is_empty() {
+            return Ok(out);
+        }
+        let holes = vec!["?"; keys.len()].join(",");
+        let sql = format!("select h, dst from tr where h in ({holes})");
+        let mut st = self.conn.prepare(&sql)?;
+        let it = st.query_map(rusqlite::params_from_iter(keys.iter()), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
+        for row in it.flatten() {
+            out.insert(row.0, row.1);
+        }
+        Ok(out)
+    }
+
+    /// 写缓存。`(key, 原文, 译文, 引擎)`。
+    /// 一条事务写完整批，避免边翻边落库时磁盘抖动。
+    pub fn tr_put(&mut self, rows: &[(String, String, String, String)]) -> Res<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let at = Utc::now().to_rfc3339();
+        let tx = self.conn.transaction()?;
+        {
+            let mut st = tx.prepare(
+                "insert into tr (h, src, dst, engine, at) values (?1, ?2, ?3, ?4, ?5)
+                 on conflict(h) do update set dst = excluded.dst, engine = excluded.engine, at = excluded.at",
+            )?;
+            for (h, src, dst, engine) in rows {
+                st.execute(params![h, src, dst, engine, &at])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 缓存条目数，设置页用来显示「已积累多少句」。
+    pub fn tr_count(&self) -> Res<i64> {
+        Ok(self
+            .conn
+            .query_row("select count(*) from tr", [], |r| r.get(0))?)
+    }
+
+    pub fn tr_clear(&mut self) -> Res<()> {
+        self.conn.execute("delete from tr", [])?;
+        Ok(())
     }
 }
 

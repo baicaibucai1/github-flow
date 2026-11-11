@@ -96,10 +96,53 @@ fn app_info(state: State<AppState>) -> Result<serde_json::Value, String> {
 /// 故意做成同步命令：Tauri 会把它放到自己的线程池里跑，
 /// ureq 是阻塞式客户端，塞进 async 里反而要绕。
 /// 失败就返回 Err，界面显示「拉不到」——不编造内容。
-#[tauri::command]
+///
+/// `rename_all = "snake_case"`：Tauri 2 默认把参数名当驼峰（fullName），
+/// 而前端一直传的是 full_name，不声明就是启动即报「missing required key」。
+#[tauri::command(rename_all = "snake_case")]
 fn repo_extra(full_name: String) -> Result<flow_core::source::RepoExtra, String> {
-    let src = flow_core::source::Source::new(None);
+    // 匿名配额只有 60 次/小时，而打开一个仓库要发 3 个请求（meta + readme + 目录树），
+    // 二十个仓库就见底。所以没登录也要先用本机凭据，别让用户先点「我的」才能正常用。
+    static LOCAL: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    let token = session()
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|s| s.token.clone()))
+        .or_else(|| LOCAL.get_or_init(|| find_token().map(|(t, _)| t)).clone());
+    let src = flow_core::source::Source::new(token);
     src.repo_extra(&full_name).map_err(|e| e.to_string())
+}
+
+/// 翻译服务。全局一份：引擎配置从数据目录读，只读一次。
+/// 本地引擎是纯计算，没有连接池要维护，共享它纯粹是为了少解析一遍配置。
+fn tr() -> &'static flow_core::translate::Service {
+    static S: std::sync::OnceLock<flow_core::translate::Service> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        flow_core::translate::Service::new(flow_core::translate::Config::load(&data_dir()))
+    })
+}
+
+/// 批量翻短文本：卡片描述、仓库首段。
+/// 前端滚到哪就发哪一批，没看到的永远不翻。
+#[tauri::command(rename_all = "snake_case")]
+fn tr_lines(state: tauri::State<AppState>, items: Vec<String>) -> Result<Vec<String>, String> {
+    let mut st = state.0.lock().map_err(|e| e.to_string())?;
+    tr().lines(&mut st, &items).map_err(|e| e.to_string())
+}
+
+/// 翻一整篇 markdown。代码块、HTML 行、图片地址会被原样留下，
+/// 只翻正文段落。
+#[tauri::command(rename_all = "snake_case")]
+fn tr_md(state: tauri::State<AppState>, text: String) -> Result<String, String> {
+    let mut st = state.0.lock().map_err(|e| e.to_string())?;
+    tr().markdown(&mut st, &text).map_err(|e| e.to_string())
+}
+
+/// 引擎状态。给设置区显示「本地词典 / 云端 XXX」，不返回任何密钥。
+#[tauri::command(rename_all = "snake_case")]
+fn tr_status(state: tauri::State<AppState>) -> Result<flow_core::translate::Status, String> {
+    let st = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(tr().status(&st))
 }
 
 /// 用系统浏览器打开仓库页。
@@ -131,6 +174,112 @@ fn open_url(url: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// 当前登录的令牌。不放磁盘：每次启动重新从本机凭据里找，
+/// 这样用户在 gh 里换了账号，这里下次打开就跟着换，不会拿旧令牌乱试。
+struct Session {
+    token: String,
+    via: &'static str,
+}
+
+static SESSION: std::sync::OnceLock<Mutex<Option<Session>>> = std::sync::OnceLock::new();
+
+fn session() -> &'static Mutex<Option<Session>> {
+    SESSION.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// 问 gh CLI 要令牌。gh 会把凭据放进系统钥匙串，
+/// 所以这是本机上最可靠的一处来源。
+fn gh_token() -> Option<String> {
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["auth", "token"]);
+    #[cfg(target_os = "windows")]
+    {
+        // release 版没有控制台，子进程弹窗会很突兀
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
+}
+
+/// gh 的配置文件。新版默认把令牌放钥匙串，这里只是没有 gh 时的兜底。
+fn hosts_yml_token() -> Option<String> {
+    let base = std::env::var("APPDATA").ok()?;
+    let path = PathBuf::from(base).join("GitHub CLI").join("hosts.yml");
+    let txt = std::fs::read_to_string(path).ok()?;
+    for line in txt.lines() {
+        if let Some(rest) = line.trim().strip_prefix("oauth_token:") {
+            let t = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
+/// 本机凭据，按可靠性排序。
+fn find_token() -> Option<(String, &'static str)> {
+    for key in ["GH_TOKEN", "GITHUB_TOKEN"] {
+        if let Ok(v) = std::env::var(key) {
+            let t = v.trim().to_string();
+            if !t.is_empty() {
+                return Some((t, "env"));
+            }
+        }
+    }
+    if let Some(t) = gh_token() {
+        return Some((t, "gh"));
+    }
+    hosts_yml_token().map(|t| (t, "hosts.yml"))
+}
+
+/// 登录：读本机凭据 → 换账号资料。不弹网页、不要求粘贴令牌。
+#[tauri::command]
+fn account_signin() -> Result<flow_core::account::Account, String> {
+    let (token, via) = find_token().ok_or_else(|| {
+        "没找到本机凭据。试过 GH_TOKEN 环境变量、`gh auth token`、GitHub CLI 的 hosts.yml。\
+         在终端跑一次 `gh auth login` 就有了。"
+            .to_string()
+    })?;
+    let me = flow_core::account::Account::fetch(&token, via).map_err(|e| e.to_string())?;
+    let mut g = session().lock().map_err(|_| "登录状态锁坏了".to_string())?;
+    *g = Some(Session { token, via });
+    Ok(me)
+}
+
+#[tauri::command]
+fn account_me() -> Result<flow_core::account::Account, String> {
+    let g = session().lock().map_err(|_| "登录状态锁坏了".to_string())?;
+    let s = g.as_ref().ok_or_else(|| "还没登录".to_string())?;
+    flow_core::account::Account::fetch(&s.token, s.via).map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn account_repos(limit: Option<usize>) -> Result<Vec<flow_core::account::OwnedRepo>, String> {
+    let g = session().lock().map_err(|_| "登录状态锁坏了".to_string())?;
+    let s = g.as_ref().ok_or_else(|| "还没登录".to_string())?;
+    flow_core::account::repos(&s.token, limit.unwrap_or(12)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn account_signout() -> Result<(), String> {
+    let mut g = session().lock().map_err(|_| "登录状态锁坏了".to_string())?;
+    *g = None;
     Ok(())
 }
 
@@ -195,7 +344,14 @@ fn main() {
             saved_list,
             app_info,
             repo_extra,
-            open_url
+            tr_lines,
+            tr_md,
+            tr_status,
+            open_url,
+            account_signin,
+            account_me,
+            account_repos,
+            account_signout
         ])
         .run(tauri::generate_context!())
         .expect("窗口启动失败");
